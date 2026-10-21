@@ -1,0 +1,38 @@
+import 'package:flutter/material.dart';
+import 'package:rednote/core/design_system/components/review_frosted_app_bar.dart';
+
+typedef ReviewPageBodyBuilder = Widget Function(
+  BuildContext context,
+  EdgeInsets contentInsets,
+);
+
+/// Shared page shell for settings and other simple secondary pages.
+class ReviewPageScaffold extends StatelessWidget {
+  const ReviewPageScaffold({
+    super.key,
+    required this.title,
+    required this.bodyBuilder,
+    this.showNavigationIcon = true,
+  });
+
+  final String title;
+  final ReviewPageBodyBuilder bodyBuilder;
+  final bool showNavigationIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: ReviewFrostedAppBar(
+        automaticallyImplyLeading: showNavigationIcon,
+        title: Text(title),
+      ),
+      body: bodyBuilder(
+        context,
+        EdgeInsets.only(
+          top: MediaQuery.paddingOf(context).top + kToolbarHeight,
+        ),
+      ),
+    );
+  }
+}

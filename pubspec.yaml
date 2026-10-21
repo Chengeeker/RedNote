@@ -1,0 +1,32 @@
+name: rednote
+description: Independent Android client for browsing Xiaohongshu.
+publish_to: none
+version: 0.2.11+16
+environment:
+  sdk: ^3.13.1
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  liquid_glass_widgets:
+    path: packages/liquid_glass_widgets
+  shared_preferences: ^2.3.2
+  dynamic_color: ^1.9.0
+  cupertino_icons: ^1.0.9
+  extended_image: 8.3.1
+  video_player: ^2.9.2
+dependency_overrides:
+  video_player_android:
+    path: packages/video_player_android
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/xhs_emoji.json
+  shaders:
+    - shaders/gallery_glass_button.frag
