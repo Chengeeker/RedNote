@@ -21,15 +21,44 @@ import java.util.concurrent.Executors
 
 internal class MediaBridge(private val activity:MainActivity,engine:FlutterEngine) {
     private val worker=Executors.newSingleThreadExecutor()
+    private val metadataWorker=Executors.newSingleThreadExecutor()
     @Volatile private var connection:HttpURLConnection?=null
     private val channel=MethodChannel(engine.dartExecutor.binaryMessenger,"com.red.note/media")
+    private val hdrImages=HdrImageViewFactory(channel)
+    private var previousColorMode:Int?=null
     init {
-        engine.platformViewsController.registry.registerViewFactory("com.red.note/hdrImage",HdrImageViewFactory(channel))
+        engine.platformViewsController.registry.registerViewFactory("com.red.note/hdrImage",hdrImages)
         channel.setMethodCallHandler {call,result ->
             when(call.method) {
                 "isHdrDisplaySupported" -> result.success(Build.VERSION.SDK_INT>=34 && activity.display?.isHdr==true)
+                "isHdrVideoDisplaySupported" -> {
+                    val display=if(Build.VERSION.SDK_INT>=30)activity.display else activity.windowManager.defaultDisplay
+                    result.success(display?.hdrCapabilities?.supportedHdrTypes?.isNotEmpty()==true)
+                }
+                "decodeCachedHdrImage" -> {
+                    val url=call.argument<String>("url").orEmpty()
+                    if(url.isBlank())result.success(null)
+                    else hdrImages.probeCachedImage(activity,url) {found -> if(!activity.isDestroyed)result.success(found)}
+                }
+                "probeHdrVideo" -> {
+                    val url=call.argument<String>("url").orEmpty()
+                    val referer=call.argument<String>("referer").orEmpty()
+                    metadataWorker.execute {
+                        val hdr=try { HdrVideoProbe.probe(url,referer) } catch (_:Exception) { null }
+                        activity.runOnUiThread { if(!activity.isDestroyed)result.success(hdr) }
+                    }
+                }
                 "setWindowHdr" -> {
-                    if(Build.VERSION.SDK_INT>=34)activity.window.colorMode=if(call.argument<Boolean>("enabled")==true)ActivityInfo.COLOR_MODE_HDR else ActivityInfo.COLOR_MODE_DEFAULT
+                    if(Build.VERSION.SDK_INT>=34) {
+                        if(call.argument<Boolean>("enabled")==true && activity.display?.isHdr==true) {
+                            if(previousColorMode==null)previousColorMode=activity.window.colorMode
+                            activity.window.colorMode=ActivityInfo.COLOR_MODE_HDR
+                            if(Build.VERSION.SDK_INT>=35)activity.window.setDesiredHdrHeadroom(0.0f)
+                        } else {
+                            previousColorMode?.let {activity.window.colorMode=it}
+                            previousColorMode=null
+                        }
+                    }
                     result.success(null)
                 }
                 "setImageGalleryStatusBarVisible" -> {
@@ -111,5 +140,5 @@ internal class MediaBridge(private val activity:MainActivity,engine:FlutterEngin
             pending?.let {activity.contentResolver.delete(it,null,null)};legacy?.delete();throw e
         } finally {merged?.delete();conn.disconnect();connection=null}
     }
-    fun close(){connection?.disconnect();worker.shutdownNow();channel.setMethodCallHandler(null)}
+    fun close(){connection?.disconnect();worker.shutdownNow();metadataWorker.shutdownNow();channel.setMethodCallHandler(null)}
 }

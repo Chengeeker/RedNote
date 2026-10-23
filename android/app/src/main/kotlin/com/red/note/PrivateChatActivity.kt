@@ -62,11 +62,11 @@ class PrivateChatActivity : Activity() {
             setTextColor(foreground)
             contentDescription = "返回"
             setOnClickListener { finish() }
-        }, LinearLayout.LayoutParams(dp(48), -1))
+        }, LinearLayout.LayoutParams(dp(56), -1))
         bar.addView(TextView(this).apply {
             text = intent.getStringExtra("name").orEmpty().take(80).ifBlank { "私聊" }
             textSize = 17f
-            gravity = Gravity.CENTER_VERTICAL
+            gravity = Gravity.CENTER
             setTextColor(foreground)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END

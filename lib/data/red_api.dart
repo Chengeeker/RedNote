@@ -218,6 +218,29 @@ class Note {
     return '';
   }
 
+  static String originalImageUrl(Json image) {
+    for (final key in ['url_size_original', 'origin_url', 'url_size_large']) {
+      final url = mediaUrl(image[key]);
+      if (url.isNotEmpty) return url;
+    }
+    final preview = imageUrl(image);
+    final uri = Uri.tryParse(preview);
+    if (uri != null &&
+        uri.host.startsWith('sns-webpic-') &&
+        uri.host.endsWith('.xhscdn.com') &&
+        uri.pathSegments.length >= 3 &&
+        RegExp(r'^\d{12}(?:\d{2})?$').hasMatch(uri.pathSegments[0]) &&
+        RegExp(r'^[a-fA-F0-9]{32}$').hasMatch(uri.pathSegments[1])) {
+      final key = uri.pathSegments.skip(2).join('/').split('!').first;
+      if (key.length <= 512 &&
+          RegExp(r'^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*$').hasMatch(key)) {
+        // Web renditions strip gain maps; request the same public object without a format transform.
+        return Uri.https('sns-img-bd.xhscdn.com', '/$key').toString();
+      }
+    }
+    return preview;
+  }
+
   static Note? fromItem(Json item, {required String source}) {
     final card = objectOf(item['note_card']);
     final raw = card.isNotEmpty
@@ -289,17 +312,45 @@ String profileBackgroundUrl(Json profile) {
 }
 
 class VideoSource {
-  const VideoSource(this.url, this.codec, {this.audioUrl = ''});
+  const VideoSource(
+    this.url,
+    this.codec, {
+    this.audioUrl = '',
+    this.isHdr = false,
+    this.isOriginal = false,
+  });
   final String url;
   final String codec;
   final String audioUrl;
+  final bool isHdr;
+  final bool isOriginal;
+}
+
+List<VideoSource> preferredVideoSources(
+  List<VideoSource> sources, {
+  required bool hdrSupported,
+  bool original = false,
+}) {
+  final renditions = sources.where((source) => !source.isOriginal).toList();
+  final originals = sources.where((source) => source.isOriginal).toList();
+  final originalAttempts = original || renditions.isEmpty
+      ? originals.take(1).toList()
+      : <VideoSource>[];
+  final preferred = renditions.where((source) => source.isHdr == hdrSupported);
+  final fallback = renditions.where((source) => source.isHdr != hdrSupported);
+  // Reserve a fallback attempt even when HDR has many CDN/quality variants.
+  return [
+    ...originalAttempts,
+    ...preferred.take((fallback.isEmpty ? 8 : 7) - originalAttempts.length),
+    ...fallback,
+  ].take(8).toList();
 }
 
 List<VideoSource> videoSources(Json raw) {
   final video = objectOf(raw['video']);
   final media = objectOf(video['media']);
   final streams = objectOf(media['stream']);
-  dynamic v2 = video['media_v2'];
+  dynamic v2 = video['media_v2'] ?? video['mediaV2'];
   if (v2 is String && v2.length < 1024 * 1024) {
     try {
       v2 = jsonDecode(v2);
@@ -329,31 +380,52 @@ List<VideoSource> videoSources(Json raw) {
   }
   final result = <VideoSource>[];
   final seen = <String>{};
-  void add(dynamic value, String codec, {String audio = ''}) {
+  void add(
+    dynamic value,
+    String codec, {
+    String audio = '',
+    bool isHdr = false,
+  }) {
     final url = mediaUrl(value);
     if (url.isNotEmpty && seen.add('$url|$audio')) {
-      result.add(VideoSource(url, codec, audioUrl: audio));
+      result.add(VideoSource(url, codec, audioUrl: audio, isHdr: isHdr));
     }
   }
 
   // Prefer widely supported streams; retain the actual returned alternatives.
   for (final codec in ['h264', 'h265', 'av1', ...streams.keys]) {
     for (final entry in objectsOf(streams[codec])) {
+      final isHdr =
+          (int.tryParse(textOf(entry['hdr_type'] ?? entry['hdrType'])) ?? 0) >
+          0;
       final hasAudio =
           textOf(entry['audio_codec']).isNotEmpty ||
           (int.tryParse(textOf(entry['audio_bitrate'])) ?? 0) > 0;
       final audios = hasAudio || audioUrls.isEmpty ? [''] : audioUrls.take(2);
       for (final audio in audios) {
-        add(entry['master_url'], codec, audio: audio);
+        add(entry['master_url'], codec, audio: audio, isHdr: isHdr);
         if (entry['backup_urls'] is List) {
           for (final url in entry['backup_urls'] as List) {
-            add(url, codec, audio: audio);
+            add(url, codec, audio: audio, isHdr: isHdr);
           }
         }
       }
     }
   }
   add(video['url'], 'video');
+  final consumer = objectOf(video['consumer']);
+  final originalKey = textOf(
+    consumer['origin_video_key'] ?? consumer['originVideoKey'],
+  );
+  if (originalKey.isNotEmpty &&
+      originalKey.length <= 512 &&
+      RegExp(r'^[A-Za-z0-9_-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(originalKey) &&
+      !originalKey.split('/').any((part) => part == '.' || part == '..')) {
+    final originalUrl = 'https://sns-video-bd.xhscdn.com/$originalKey';
+    if (seen.add('$originalUrl|')) {
+      result.add(VideoSource(originalUrl, 'original', isOriginal: true));
+    }
+  }
   return result;
 }
 

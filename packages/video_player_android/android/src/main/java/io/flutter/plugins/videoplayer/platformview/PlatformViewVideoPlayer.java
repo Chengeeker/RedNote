@@ -5,13 +5,17 @@
 package io.flutter.plugins.videoplayer.platformview;
 
 import android.content.Context;
+import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.Format;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.DecoderReuseEvaluation;
+import androidx.media3.exoplayer.analytics.AnalyticsListener;
 import io.flutter.plugins.videoplayer.ExoPlayerEventListener;
 import io.flutter.plugins.videoplayer.VideoAsset;
 import io.flutter.plugins.videoplayer.VideoPlayer;
@@ -79,7 +83,17 @@ public class PlatformViewVideoPlayer extends VideoPlayer {
           builder
               .setTrackSelector(trackSelector)
               .setMediaSourceFactory(asset.getMediaSourceFactory(context));
-          return builder.build();
+          ExoPlayer player = builder.build();
+          player.addAnalyticsListener(new AnalyticsListener() {
+            @Override
+            public void onVideoInputFormatChanged(
+                AnalyticsListener.EventTime eventTime, Format format,
+                @Nullable DecoderReuseEvaluation decoderReuseEvaluation) {
+              // Codec/color metadata only: never log media URLs or account data.
+              Log.i("RedNoteHDR", "video mime=" + format.sampleMimeType + " color=" + format.colorInfo);
+            }
+          });
+          return player;
         });
   }
 

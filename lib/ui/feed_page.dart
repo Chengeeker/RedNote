@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
@@ -8,10 +10,12 @@ import '../core/utils/spring_page_route.dart';
 import '../features/media/image_gallery_page.dart'
     show
         GalleryImage,
+        directImageRectTween,
         ImageGalleryHeroTag,
         imageGalleryHeroFlightShuttleBuilder;
 import 'common.dart';
 import 'note_page.dart';
+import 'note_title_hero.dart';
 
 class FeedPage extends StatefulWidget {
   const FeedPage({
@@ -36,7 +40,10 @@ class FeedPage extends StatefulWidget {
 }
 
 class FeedPageState extends State<FeedPage> {
-  final scroll = ScrollController();
+  late final ScrollController scroll;
+  late final String _cacheKey =
+      'homeSnapshot:${textOf(widget.app.user["user_id"])}';
+  bool get _cacheable => widget.method == 'home';
   final notes = <Note>[];
   final seen = <String>{};
   bool busy = false, more = true;
@@ -51,10 +58,81 @@ class FeedPageState extends State<FeedPage> {
   void initState() {
     super.initState();
     _lastEpoch = widget.app.epoch;
+    final restored = _restore();
+    scroll = ScrollController(
+      initialScrollOffset: restored
+          ? (widget.app.preferences.getDouble('$_cacheKey:offset') ?? 0)
+          : 0,
+    );
     scroll.addListener(() {
       if (scroll.position.extentAfter < 600) load();
     });
-    if (widget.app.loggedIn || _supportsGuest) load();
+    if (!restored && (widget.app.loggedIn || _supportsGuest)) load();
+  }
+
+  bool _restore() {
+    if (!_cacheable) return false;
+    try {
+      final data = objectOf(
+        jsonDecode(widget.app.preferences.getString(_cacheKey) ?? '{}'),
+      );
+      if (!mapEquals(objectOf(data['args']), widget.args)) return false;
+      notes.addAll(
+        objectsOf(data['items'])
+            .map((item) => Note.fromItem(item, source: widget.source))
+            .whereType<Note>(),
+      );
+      if (notes.isEmpty) return false;
+      seen.addAll(notes.map((note) => note.reference.id));
+      cursor = textOf(data['cursor']);
+      sessionId = textOf(data['sessionId']);
+      page = data['page'] as int;
+      more = data['more'] as bool;
+      return true;
+    } catch (_) {
+      notes.clear();
+      seen.clear();
+      cursor = sessionId = '';
+      page = 1;
+      more = true;
+      return false;
+    }
+  }
+
+  Future<void> _saveSnapshot() async {
+    if (!_cacheable || notes.isEmpty) return;
+    try {
+      await widget.app.preferences.setString(
+        _cacheKey,
+        jsonEncode({
+          'args': widget.args,
+          'items': [
+            for (final note in notes)
+              {
+                'id': note.reference.id,
+                'xsec_token': note.reference.token,
+                'xsec_source': note.reference.source,
+                'note_card': note.raw,
+              },
+          ],
+          'cursor': cursor,
+          'sessionId': sessionId,
+          'page': page,
+          'more': more,
+        }),
+      );
+    } catch (error) {
+      debugPrint('Feed snapshot save failed: $error');
+    }
+  }
+
+  void _saveOffset() {
+    if (_cacheable && scroll.hasClients && notes.isNotEmpty) {
+      widget.app.preferences.setDouble(
+        '$_cacheKey:offset',
+        scroll.offset.clamp(0, double.infinity),
+      );
+    }
   }
 
   @override
@@ -71,6 +149,7 @@ class FeedPageState extends State<FeedPage> {
   @override
   void dispose() {
     generation++;
+    _saveOffset();
     scroll.dispose();
     super.dispose();
   }
@@ -98,6 +177,9 @@ class FeedPageState extends State<FeedPage> {
     failure = null;
     notes.clear();
     seen.clear();
+    if (_cacheable) {
+      await widget.app.preferences.setDouble('$_cacheKey:offset', 0);
+    }
     await load();
   }
 
@@ -142,6 +224,7 @@ class FeedPageState extends State<FeedPage> {
       cursor = next;
       sessionId = textOf(data['session_id']);
       page++;
+      await _saveSnapshot();
     } catch (e) {
       if (mounted && current == generation) failure = e;
     } finally {
@@ -187,79 +270,86 @@ class FeedPageState extends State<FeedPage> {
         ],
       );
     }
-    return RefreshIndicator(
-      onRefresh: refresh,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = constraints.maxWidth >= 840
-              ? 4
-              : constraints.maxWidth >= 600
-              ? 3
-              : 2;
-          return CustomScrollView(
-            controller: scroll,
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              if (widget.header != null)
-                SliverToBoxAdapter(child: widget.header),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    mainAxisExtent:
-                        (constraints.maxWidth / columns) * 1.35 +
-                        (MediaQuery.textScalerOf(context).scale(13) * 4),
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) => NoteTile(
-                      note: notes[index],
-                      app: widget.app,
-                      showViewCount: widget.showViewCount,
-                      viewCount: widget.viewCounts[notes[index].reference.id]
-                          ?.toString(),
+    return NotificationListener<ScrollEndNotification>(
+      onNotification: (_) {
+        _saveOffset();
+        return false;
+      },
+      child: RefreshIndicator(
+        onRefresh: refresh,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final columns = constraints.maxWidth >= 840
+                ? 4
+                : constraints.maxWidth >= 600
+                ? 3
+                : 2;
+            return CustomScrollView(
+              controller: scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                if (widget.header != null)
+                  SliverToBoxAdapter(child: widget.header),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: columns,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                      mainAxisExtent:
+                          (constraints.maxWidth / columns) * 1.35 +
+                          (MediaQuery.textScalerOf(context).scale(13) * 4),
                     ),
-                    childCount: notes.length,
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) => NoteTile(
+                        note: notes[index],
+                        app: widget.app,
+                        showViewCount: widget.showViewCount,
+                        viewCount: widget.viewCounts[notes[index].reference.id]
+                            ?.toString(),
+                      ),
+                      childCount: notes.length,
+                    ),
                   ),
                 ),
-              ),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-                  child: Center(
-                    child: busy
-                        ? const CircularProgressIndicator()
-                        : failure != null
-                        ? Column(
-                            children: [
-                              Text(
-                                errorText(failure!),
-                                textAlign: TextAlign.center,
-                              ),
-                              if (needsLogin(failure))
-                                TextButton(
-                                  onPressed: () => signIn(context, widget.app),
-                                  child: const Text('网页登录'),
-                                )
-                              else
-                                TextButton(
-                                  onPressed: retry,
-                                  child: const Text('重试加载'),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                    child: Center(
+                      child: busy
+                          ? const CircularProgressIndicator()
+                          : failure != null
+                          ? Column(
+                              children: [
+                                Text(
+                                  errorText(failure!),
+                                  textAlign: TextAlign.center,
                                 ),
-                            ],
-                          )
-                        : TextButton(
-                            onPressed: more ? load : null,
-                            child: Text(more ? '加载更多' : '已经到底了'),
-                          ),
+                                if (needsLogin(failure))
+                                  TextButton(
+                                    onPressed: () =>
+                                        signIn(context, widget.app),
+                                    child: const Text('网页登录'),
+                                  )
+                                else
+                                  TextButton(
+                                    onPressed: retry,
+                                    child: const Text('重试加载'),
+                                  ),
+                              ],
+                            )
+                          : TextButton(
+                              onPressed: more ? load : null,
+                              child: Text(more ? '加载更多' : '已经到底了'),
+                            ),
+                    ),
                   ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -278,7 +368,26 @@ class NoteTile extends StatelessWidget {
   final bool showViewCount;
   final String? viewCount;
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: app,
+    builder: (context, _) => _buildTile(context),
+  );
+
+  Future<void> _toggleLike(BuildContext context) async {
+    if (app.noteInteractionBusy(note, 'likeNote')) return;
+    if (!app.loggedIn) {
+      await signIn(context, app);
+      return;
+    }
+    try {
+      await app.toggleNoteInteraction(note, 'likeNote');
+    } catch (error) {
+      if (context.mounted) showFailure(context, error);
+    }
+  }
+
+  Widget _buildTile(BuildContext context) {
+    final interaction = app.noteInteraction(note);
     final coverTag = ImageGalleryHeroTag.forPic(
       scope: note.reference.id,
       index: 0,
@@ -302,6 +411,7 @@ class NoteTile extends StatelessWidget {
               fit: StackFit.expand,
               children: [
                 Hero(
+                  createRectTween: directImageRectTween,
                   tag: coverTag,
                   flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
                   child: LayoutBuilder(
@@ -379,7 +489,9 @@ class NoteTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Hero(
+                  createRectTween: directImageRectTween,
                   tag: 'note-title:${note.reference.id}',
+                  flightShuttleBuilder: noteTitleFlightShuttle,
                   child: Material(
                     type: MaterialType.transparency,
                     child: XhsRichText(
@@ -411,16 +523,43 @@ class NoteTile extends StatelessWidget {
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ),
-                          if (note.likes.isNotEmpty) ...[
-                            const Icon(Icons.favorite_border, size: 14),
-                            const SizedBox(width: 3),
-                            Text(
-                              note.likes,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
+                          Tooltip(
+                            message: interaction['liked'] == true
+                                ? '取消点赞'
+                                : '点赞笔记',
+                            child: InkWell(
+                              key: ValueKey('note-like:${note.reference.id}'),
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () => _toggleLike(context),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                  vertical: 8,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      interaction['liked'] == true
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      size: 16,
+                                      color: interaction['liked'] == true
+                                          ? const Color(0xFFFF2442)
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 3),
+                                    Text(
+                                      textOf(interaction['liked_count'] ?? '0'),
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ],
+                          ),
                         ],
                       ),
                     ),

@@ -1,35 +1,76 @@
 package com.red.note
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
-import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.LruCache
 import android.view.View
+import android.view.animation.LinearInterpolator
 import android.widget.ImageView
+import com.red.note.media.JpegGainmapRepair
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
-import java.io.ByteArrayOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
+import java.io.File
 import java.util.concurrent.Executors
+import java.security.MessageDigest
+import kotlin.math.sqrt
+
+private val hdrImageLoader = Executors.newFixedThreadPool(2)
+private val hdrImageMain = Handler(Looper.getMainLooper())
+private val hdrCacheBudget = minOf(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 8).toInt()
+
+private fun cachedImage(context: Context, url: String): File {
+    val key = MessageDigest.getInstance("MD5").digest(url.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }
+    return File(context.cacheDir, "cacheimage/$key")
+}
+
+private fun decodeHdrBitmap(source: ImageDecoder.Source): Bitmap =
+    ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+        Log.i("RedNoteHDR", "source mime=${info.mimeType} size=${info.size.width}x${info.size.height}")
+        decoder.allocator = ImageDecoder.ALLOCATOR_HARDWARE
+        val pixels = info.size.width.toDouble() * info.size.height
+        // Leave row-stride headroom so the current and next base/gain-map pairs fit together.
+        val budget = hdrCacheBudget / 18.0
+        if (pixels > budget) {
+            val scale = sqrt(budget / pixels)
+            decoder.setTargetSize(maxOf(1, (info.size.width * scale).toInt()), maxOf(1, (info.size.height * scale).toInt()))
+        }
+    }
+
+private fun decodeHdrBytes(bytes: ByteArray): Bitmap {
+    val bitmap = decodeHdrBitmap(ImageDecoder.createSource(bytes))
+    if (Build.VERSION.SDK_INT < 34 || bitmap.hasGainmap()) return bitmap
+    val repaired = JpegGainmapRepair.repair(bytes) ?: return bitmap
+    val alternate = try { decodeHdrBitmap(ImageDecoder.createSource(repaired)) }
+        catch (_: Exception) { return bitmap }
+    Log.i("RedNoteHDR", "repaired MPF gainMap=${alternate.hasGainmap()}")
+    if (alternate.hasGainmap()) {
+        bitmap.recycle()
+        return alternate
+    }
+    alternate.recycle()
+    return bitmap
+}
+
+private fun decodeHdrFile(file: File): Bitmap =
+    if (file.length() <= 16L * 1024 * 1024) decodeHdrBytes(file.readBytes())
+    else decodeHdrBitmap(ImageDecoder.createSource(file))
 
 internal class HdrImageViewFactory(
     private val channel: MethodChannel,
 ) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
     // Shared by this Activity's gallery views, never persisted to disk.
-    private val bitmaps = object : LruCache<Pair<String, Map<String, String>>, Bitmap>(
-        minOf(64L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 8).toInt(),
-    ) {
-        override fun sizeOf(key: Pair<String, Map<String, String>>, value: Bitmap): Int {
+    private val bitmaps = object : LruCache<String, Bitmap>(hdrCacheBudget) {
+        override fun sizeOf(key: String, value: Bitmap): Int {
             val gainMapBytes = if (Build.VERSION.SDK_INT >= 34 && value.hasGainmap()) {
                 value.gainmap?.gainmapContents?.allocationByteCount ?: 0
             } else 0
@@ -37,25 +78,45 @@ internal class HdrImageViewFactory(
         }
     }
 
+    private val pending = HashMap<String, MutableList<(Bitmap?) -> Unit>>()
+
+    private fun loadCached(context: Context, url: String, complete: (Bitmap?) -> Unit) {
+        bitmaps.get(url)?.let { bitmap -> hdrImageMain.post { complete(bitmap) }; return }
+        synchronized(pending) {
+            pending[url]?.let { it.add(complete); return }
+            pending[url] = mutableListOf(complete)
+        }
+        hdrImageLoader.execute {
+            val bitmap = try {
+                val file = cachedImage(context, url)
+                if (!file.isFile || file.length() !in 1..64L * 1024 * 1024) null
+                else decodeHdrFile(file).also { decoded ->
+                    if (Build.VERSION.SDK_INT >= 34 && decoded.hasGainmap()) bitmaps.put(url, decoded)
+                    Log.i("RedNoteHDR", "cached gainMap=${decoded.hasGainmap()} size=${decoded.width}x${decoded.height}")
+                }
+            } catch (_: Exception) { null } catch (_: OutOfMemoryError) { null }
+            val callbacks = synchronized(pending) { pending.remove(url).orEmpty() }
+            hdrImageMain.post { callbacks.forEach { it(bitmap) } }
+        }
+    }
+
+    fun probeCachedImage(context: Context, url: String, complete: (Boolean?) -> Unit) {
+        if (Build.VERSION.SDK_INT < 34) { complete(false); return }
+        loadCached(context, url) { bitmap -> complete(bitmap?.hasGainmap()) }
+    }
+
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
         val params = args as? Map<*, *> ?: emptyMap<Any, Any>()
         val url = params["url"] as? String ?: ""
-        val headers = (params["headers"] as? Map<*, *>)
-            ?.mapNotNull { (key, value) ->
-                if (key is String && value is String) key to value else null
-            }
-            ?.toMap()
-            .orEmpty()
-        return HdrImagePlatformView(context, url, headers, channel, bitmaps)
+        return HdrImagePlatformView(context, url, channel) { complete -> loadCached(context, url, complete) }
     }
 }
 
 private class HdrImagePlatformView(
     context: Context,
     private val url: String,
-    private val headers: Map<String, String>,
     private val channel: MethodChannel,
-    private val bitmaps: LruCache<Pair<String, Map<String, String>>, Bitmap>,
+    loadBitmap: ((Bitmap?) -> Unit) -> Unit,
 ) : PlatformView {
     private var decodedGainMap = false
     private var reportedDraw = false
@@ -71,7 +132,7 @@ private class HdrImagePlatformView(
             if (!reportedDraw || (!reportedHdrOutput && ratio > 1.0f)) {
                 reportedDraw = true
                 reportedHdrOutput = ratio > 1.0f
-                Log.i("GreennoteHDR", "gainMap=true hardwareCanvas=${canvas.isHardwareAccelerated} hdrSdrRatio=$ratio")
+                Log.i("RedNoteHDR", "gainMap=true hardwareCanvas=${canvas.isHardwareAccelerated} hdrSdrRatio=$ratio")
             }
         }
     }.apply {
@@ -80,105 +141,57 @@ private class HdrImagePlatformView(
         setBackgroundColor(android.graphics.Color.TRANSPARENT)
     }
     @Volatile private var disposed = false
-    @Volatile private var activeConnection: HttpURLConnection? = null
-    private val loadTask = loader.submit { loadImage() }
+    private var reveal: ValueAnimator? = null
+    init {
+        loadBitmap { bitmap ->
+            if (!disposed) {
+                if (bitmap == null) reportFailure() else showBitmap(bitmap)
+            }
+        }
+    }
 
     override fun getView(): View = imageView
 
-    private fun loadImage() {
-        var connection: HttpURLConnection? = null
-        try {
-            if (disposed) return
-            val cacheKey = url to headers
-            bitmaps.get(cacheKey)?.let {
-                showBitmap(it)
-                return
+    private fun reportFailure() {
+        hdrImageMain.post {
+            if (!disposed) {
+                channel.invokeMethod(
+                    "hdrImageDecodeFailed",
+                    mapOf("url" to url),
+                )
             }
-            val uri = Uri.parse(url)
-            require(uri.scheme == "https" && !uri.host.isNullOrBlank() && uri.userInfo == null)
-            connection = URL(url).openConnection() as HttpURLConnection
-            activeConnection = connection
-            if (disposed) return
-            connection.connectTimeout = 15_000
-            connection.readTimeout = 25_000
-            connection.instanceFollowRedirects = false
-            connection.setRequestProperty("Accept", "image/*")
-            headers.forEach { (key, value) ->
-                if ('\r' !in key && '\n' !in key && '\r' !in value && '\n' !in value) {
-                    connection.setRequestProperty(key, value)
-                }
-            }
-            // Keep JPEG Ultra HDR gain maps; shared image headers prefer AVIF/WebP variants.
-            connection.setRequestProperty("Accept", "image/jpeg,image/*;q=0.8,*/*;q=0.5")
-            connection.connect()
-            check(connection.responseCode in 200..299) { "Image request failed" }
-            check(connection.contentLengthLong <= maxImageBytes) { "Image is too large" }
-            val bytes = connection.inputStream.use { input ->
-                val output = ByteArrayOutputStream()
-                val buffer = ByteArray(16 * 1024)
-                var total = 0L
-                while (true) {
-                    if (disposed || Thread.currentThread().isInterrupted) return
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    total += count
-                    check(total <= maxImageBytes) { "Image is too large" }
-                    output.write(buffer, 0, count)
-                }
-                output.toByteArray()
-            }
-            val bitmap = if (Build.VERSION.SDK_INT >= 28) {
-                ImageDecoder.decodeBitmap(ImageDecoder.createSource(bytes)) { decoder, _, _ ->
-                    decoder.allocator = ImageDecoder.ALLOCATOR_HARDWARE
-                    decoder.isMutableRequired = false
-                }
-            } else {
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    ?: error("Image decode failed")
-            }
-            if (disposed) return
-            // Do not recycle on eviction: a visible ImageView may still own it.
-            bitmaps.put(cacheKey, bitmap)
-            showBitmap(bitmap)
-        } catch (_: Exception) {
-            mainHandler.post {
-                if (!disposed) {
-                    channel.invokeMethod(
-                        "hdrImageDecodeFailed",
-                        mapOf("url" to url),
-                    )
-                }
-            }
-        } finally {
-            connection?.disconnect()
-            activeConnection = null
         }
     }
 
     private fun showBitmap(bitmap: Bitmap) {
         val hasGainMap = Build.VERSION.SDK_INT >= 34 && bitmap.hasGainmap()
-        mainHandler.post {
+        hdrImageMain.post {
             if (disposed) return@post
             decodedGainMap = hasGainMap
-            Log.i("GreennoteHDR", "decoded gainMap=$hasGainMap size=${bitmap.width}x${bitmap.height}")
+            Log.i("RedNoteHDR", "decoded gainMap=$hasGainMap size=${bitmap.width}x${bitmap.height}")
+            reveal?.cancel()
+            imageView.imageAlpha = if (hasGainMap) 0 else 255
             imageView.setImageBitmap(bitmap)
             channel.invokeMethod(
                 "hdrImageDecoded",
                 mapOf("url" to url, "hasGainMap" to hasGainMap),
             )
+            if (hasGainMap) {
+                // Blend on the HDR-capable Canvas, not a Flutter SDR opacity layer.
+                reveal = ValueAnimator.ofInt(0, 255).apply {
+                    duration = 500
+                    interpolator = LinearInterpolator()
+                    addUpdateListener { imageView.imageAlpha = it.animatedValue as Int }
+                    start()
+                }
+            }
         }
     }
 
     override fun dispose() {
         disposed = true
-        loadTask.cancel(true)
-        activeConnection?.disconnect()
+        reveal?.cancel()
         imageView.setImageDrawable(null)
     }
 
-    companion object {
-        private const val maxImageBytes = 64L * 1024 * 1024
-        private val mainHandler = Handler(Looper.getMainLooper())
-        private val loader = Executors.newFixedThreadPool(2)
-    }
 }

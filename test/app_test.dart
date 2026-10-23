@@ -11,7 +11,11 @@ import 'package:rednote/main.dart';
 import 'package:rednote/core/settings/app_settings.dart';
 import 'package:rednote/data/red_api.dart';
 import 'package:rednote/features/media/image_gallery_page.dart'
-    show GalleryImage, ImageGalleryHeroPreviewHost, ImageGalleryHeroTag;
+    show
+        GalleryImage,
+        ImageGalleryHeroPreviewHost,
+        ImageGalleryHeroTag,
+        ImageGalleryPage;
 import 'package:rednote/ui/comment_editor.dart';
 import 'package:rednote/ui/cache_page.dart';
 import 'package:rednote/ui/note_page.dart';
@@ -670,16 +674,12 @@ void main() {
                     'title': '多图笔记',
                     'user': {'user_id': 'author', 'nickname': '图集作者'},
                     'image_list': [
-                      {
-                        'url': 'https://cdn.test/1.jpg',
-                        'width': 400,
-                        'height': 300,
-                      },
-                      {
-                        'url': 'https://cdn.test/2.jpg',
-                        'width': 400,
-                        'height': 300,
-                      },
+                      for (var image = 1; image <= 5; image++)
+                        {
+                          'url': 'https://cdn.test/$image.jpg',
+                          'width': 400,
+                          'height': 300,
+                        },
                     ],
                   },
                 },
@@ -711,14 +711,38 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('1/2'), findsOneWidget);
+      expect(find.text('1/5'), findsOneWidget);
       await tester.drag(find.byType(PageView), const Offset(-650, 0));
       await tester.pumpAndSettle();
-      expect(find.text('2/2'), findsOneWidget);
+      expect(find.text('2/5'), findsOneWidget);
+      final inlineController = tester
+          .widget<PageView>(find.byType(PageView))
+          .controller!;
       await tester.tap(find.byType(PageView));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 600));
       expect(tester.widget<GalleryPage>(find.byType(GalleryPage)).initial, 1);
+      await tester.tap(find.byKey(const ValueKey('gallery-thumbnail-4')));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(inlineController.page, 4);
+      expect(find.text('5/5', skipOffstage: false), findsOneWidget);
+      final inlineHeroes = tester
+          .widgetList<Hero>(
+            find.descendant(
+              of: find.byType(NotePage, skipOffstage: false),
+              matching: find.byType(Hero, skipOffstage: false),
+            ),
+          )
+          .where((hero) => hero.tag is ImageGalleryHeroTag);
+      expect(
+        inlineHeroes.any(
+          (hero) => (hero.tag as ImageGalleryHeroTag).index == 4,
+        ),
+        isTrue,
+      );
+      Navigator.of(tester.element(find.byType(ImageGalleryPage))).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('5/5'), findsOneWidget);
       expect(calls.where((c) => c.method == 'detail'), hasLength(1));
       await tester.pumpWidget(const SizedBox());
     },

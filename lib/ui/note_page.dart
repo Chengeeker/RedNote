@@ -2,6 +2,8 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:extended_image/extended_image.dart'
+    show ExtendedNetworkImageProvider;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../core/design_system/components/review_navigation_bar.dart';
@@ -17,9 +19,11 @@ import 'media_page.dart';
 import 'profile_page.dart';
 import 'comment_editor.dart';
 import 'topic_search_page.dart';
+import 'note_title_hero.dart';
 import '../core/utils/app_dialog.dart';
 import '../core/theme/app_theme.dart';
 import '../features/media/image_gallery_page.dart';
+import '../features/media/inline_hdr_badge.dart';
 import '../core/utils/spring_page_route.dart';
 
 class NotePage extends StatefulWidget {
@@ -42,6 +46,7 @@ class _NotePageState extends State<NotePage> {
   int imageIndex = 0;
   final imagePages = PageController();
   ui.Image? _openingCoverPreview;
+  int _previewIndex = 0;
   String cursor = '';
   @override
   void initState() {
@@ -57,12 +62,21 @@ class _NotePageState extends State<NotePage> {
     super.dispose();
   }
 
-  void _retainOpeningPreview(ui.Image image) {
-    if (!mounted || _openingCoverPreview != null) return;
+  void _retainOpeningPreview(ui.Image image, {int index = 0}) {
+    if (!mounted) return;
+    final previous = _openingCoverPreview;
+    _previewIndex = index;
     _openingCoverPreview = image.clone();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      previous?.dispose();
       if (mounted) setState(() {});
     });
+  }
+
+  void _syncGalleryImage(int index) {
+    if (!mounted || index == imageIndex) return;
+    setState(() => imageIndex = index);
+    if (imagePages.hasClients) imagePages.jumpToPage(index);
   }
 
   void _releaseOpeningPreview() {
@@ -196,21 +210,9 @@ class _NotePageState extends State<NotePage> {
 
   Future<void> toggleNote(String method) async {
     if (mutating || loading) return;
-    final interaction = objectOf(note.raw['interact_info']);
-    final key = method == 'likeNote' ? 'liked' : 'collected';
-    final value = interaction[key] != true;
     setState(() => mutating = true);
     try {
-      await widget.app.api.call(method, {
-        ...note.reference.args,
-        'value': value,
-      });
-      if (mounted) {
-        setState(() {
-          interaction[key] = value;
-          note.raw['interact_info'] = interaction;
-        });
-      }
+      await widget.app.toggleNoteInteraction(note, method);
     } catch (e) {
       if (mounted) showFailure(context, e);
     } finally {
@@ -265,10 +267,11 @@ class _NotePageState extends State<NotePage> {
       for (final image in note.images)
         if (Note.imageUrl(image).isNotEmpty)
           GalleryImage(
-            Note.imageUrl(image),
+            Note.originalImageUrl(image),
             width: int.tryParse(textOf(image['width'])) ?? 0,
             height: int.tryParse(textOf(image['height'])) ?? 0,
             raw: image,
+            thumbnailUrl: Note.imageUrl(image),
           ),
     ];
     final coverPreviewUrl = widget.initial.coverUrl.isNotEmpty
@@ -288,9 +291,12 @@ class _NotePageState extends State<NotePage> {
     if (pics.isEmpty && note.coverUrl.isNotEmpty) {
       pics.add(GalleryImage(note.coverUrl));
     }
-    final images = pics.map((pic) => pic.url).toList();
+    final images = pics.map((pic) {
+      final preview = Note.imageUrl(pic.raw ?? {});
+      return preview.isEmpty ? pic.url : preview;
+    }).toList();
     final sources = videoSources(note.raw);
-    final interaction = objectOf(note.raw['interact_info']);
+    final interaction = widget.app.noteInteraction(note);
     final reportedCommentCount =
         int.tryParse(textOf(interaction['comment_count'])) ?? 0;
     final commentCount = reportedCommentCount > comments.length
@@ -398,7 +404,7 @@ class _NotePageState extends State<NotePage> {
                             tooltip: '点赞',
                             icon: Icons.favorite_border_rounded,
                             selectedIcon: Icons.favorite_rounded,
-                            count: note.likes.isEmpty ? '0' : note.likes,
+                            count: textOf(interaction['liked_count'] ?? '0'),
                             selected: interaction['liked'] == true,
                             onPressed: mutating || loading
                                 ? null
@@ -543,74 +549,56 @@ class _NotePageState extends State<NotePage> {
                           onPageChanged: (index) =>
                               setState(() => imageIndex = index),
                           itemBuilder: (context, index) {
-                            final openingPreview = index == 0
+                            final openingPreview = index == _previewIndex
                                 ? _openingCoverPreview
                                 : null;
-                            final image = index == 0
-                                ? Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      if (openingPreview != null)
-                                        RawImage(
-                                          key: const ValueKey(
-                                            'note-opening-preview',
-                                          ),
-                                          image: openingPreview,
-                                          fit: BoxFit.contain,
-                                        )
-                                      else if (widget
-                                              .initial
-                                              .coverUrl
-                                              .isNotEmpty &&
-                                          widget.initial.coverUrl !=
-                                              images[index])
-                                        RemoteImage(
-                                          widget.initial.coverUrl,
-                                          fit: BoxFit.contain,
-                                          decodeWidth: 600,
-                                          api: widget.app,
-                                        ),
-                                      Image.network(
-                                        images[index],
-                                        fit: BoxFit.contain,
-                                        headers: redImageHeaders(
-                                          images[index],
-                                          api: widget.app,
-                                        ),
-                                        frameBuilder:
-                                            (
-                                              context,
-                                              child,
-                                              frame,
-                                              synchronousCall,
-                                            ) {
-                                              final ready =
-                                                  synchronousCall ||
-                                                  frame != null;
-                                              if (synchronousCall) {
-                                                _releaseOpeningPreview();
-                                              }
-                                              return AnimatedOpacity(
-                                                opacity: ready ? 1 : 0,
-                                                duration: const Duration(
-                                                  milliseconds: 180,
-                                                ),
-                                                onEnd: ready
-                                                    ? _releaseOpeningPreview
-                                                    : null,
-                                                child: child,
-                                              );
-                                            },
-                                        errorBuilder: (_, _, _) =>
-                                            const SizedBox.shrink(),
-                                      ),
-                                    ],
-                                  )
-                                : RemoteImage(
-                                    images[index],
+                            final image = Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                if (openingPreview != null)
+                                  RawImage(
+                                    key: const ValueKey('note-opening-preview'),
+                                    image: openingPreview,
                                     fit: BoxFit.contain,
+                                  )
+                                else if (index == 0 &&
+                                    widget.initial.coverUrl.isNotEmpty &&
+                                    widget.initial.coverUrl != images[index])
+                                  RemoteImage(
+                                    widget.initial.coverUrl,
+                                    fit: BoxFit.contain,
+                                    decodeWidth: 600,
                                     api: widget.app,
-                                  );
+                                  ),
+                                Image(
+                                  key: ValueKey('note-image-$index'),
+                                  image: ExtendedNetworkImageProvider(
+                                    images[index],
+                                    cache: true,
+                                    headers: redImageHeaders(
+                                      images[index],
+                                      api: widget.app,
+                                    ),
+                                    printError: false,
+                                  ),
+                                  gaplessPlayback: true,
+                                  fit: BoxFit.contain,
+                                  frameBuilder:
+                                      (context, child, frame, synchronousCall) {
+                                        final ready =
+                                            synchronousCall || frame != null;
+                                        if (ready && index == _previewIndex) {
+                                          _releaseOpeningPreview();
+                                        }
+                                        return ready
+                                            ? child
+                                            : const SizedBox.shrink();
+                                      },
+                                  errorBuilder: (_, _, _) =>
+                                      const SizedBox.shrink(),
+                                ),
+                              ],
+                            );
                             final thumbnail = ImageGalleryHeroThumbnail(
                               scope: note.reference.id,
                               index: index,
@@ -627,6 +615,7 @@ class _NotePageState extends State<NotePage> {
                                         author: note.author,
                                         initial: index,
                                         scope: note.reference.id,
+                                        onPageChanged: _syncGalleryImage,
                                       ),
                                     ),
                                   ),
@@ -634,18 +623,20 @@ class _NotePageState extends State<NotePage> {
                                 ),
                               ),
                             );
-                            return index == 0
-                                ? ImageGalleryHeroPreviewHost(
-                                    onPreviewCaptured: _retainOpeningPreview,
-                                    child: thumbnail,
-                                  )
-                                : thumbnail;
+                            return HeroMode(
+                              enabled: index == imageIndex,
+                              child: ImageGalleryHeroPreviewHost(
+                                onPreviewCaptured: (image) =>
+                                    _retainOpeningPreview(image, index: index),
+                                child: thumbnail,
+                              ),
+                            );
                           },
                         ),
                       ),
                       if (pics.length > 1)
                         Positioned(
-                          right: 12,
+                          left: 12,
                           bottom: 12,
                           child: DecoratedBox(
                             decoration: BoxDecoration(
@@ -667,6 +658,22 @@ class _NotePageState extends State<NotePage> {
                             ),
                           ),
                         ),
+                      Positioned(
+                        right: 12,
+                        bottom: 12,
+                        child: IgnorePointer(
+                          child: InlineHdrBadge(
+                            url: pics[imageIndex.clamp(0, pics.length - 1)]
+                                .originalUrl,
+                            headers: redImageHeaders(
+                              pics[imageIndex.clamp(0, pics.length - 1)]
+                                  .originalUrl,
+                              api: widget.app,
+                              preserveHdr: true,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -707,7 +714,9 @@ class _NotePageState extends State<NotePage> {
                   children: [
                     if (note.title.isNotEmpty)
                       Hero(
+                        createRectTween: directImageRectTween,
                         tag: 'note-title:${widget.initial.reference.id}',
+                        flightShuttleBuilder: noteTitleFlightShuttle,
                         child: Material(
                           type: MaterialType.transparency,
                           child: XhsRichText(
@@ -996,10 +1005,11 @@ class _CommentTileState extends State<CommentTile> {
     final commentPics = [
       for (final pic in pictures)
         GalleryImage(
-          Note.imageUrl(pic),
+          Note.originalImageUrl(pic),
           width: int.tryParse(textOf(pic['width'])) ?? 0,
           height: int.tryParse(textOf(pic['height'])) ?? 0,
           raw: pic,
+          thumbnailUrl: Note.imageUrl(pic),
         ),
     ];
     final theme = Theme.of(context);

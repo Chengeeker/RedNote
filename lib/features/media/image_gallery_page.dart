@@ -23,6 +23,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_state.dart';
 import '../../data/media_support.dart';
+import 'gallery_original_provider.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/storage/storage_path_resolver.dart';
 import '../../core/utils/app_toast.dart';
@@ -100,7 +101,7 @@ class GalleryImage {
 
   String get badgeText {
     if (isGif) return 'GIF';
-    if (isHdr) return 'HDR';
+    if (HdrImageDetector.isKnownHdr(originalUrl)) return 'HDR';
     if (isLong) return '长图';
     return '';
   }
@@ -176,6 +177,9 @@ class ImageGalleryHeroPreviewHost extends InheritedWidget {
 }
 
 /// Keeps the image pixels in flight while their fitted geometry changes.
+RectTween directImageRectTween(Rect? begin, Rect? end) =>
+    RectTween(begin: begin, end: end);
+
 Widget imageGalleryHeroFlightShuttleBuilder(
   BuildContext flightContext,
   Animation<double> animation,
@@ -201,13 +205,14 @@ Widget imageGalleryHeroFlightShuttleBuilder(
     toHeroContext
         .findAncestorStateOfType<_ImageGalleryPageState>()
         ?._retainOpeningPreview(source.image);
-    ImageGalleryHeroPreviewHost.retainPreview(toHeroContext, source.image);
   }
+  ImageGalleryHeroPreviewHost.retainPreview(toHeroContext, source.image);
   if (isPop && (tag is! ImageGalleryHeroTag || !tag.thumbnailUsesCover)) {
     return fromHero.child;
   }
   final target = isPop
-      ? _HeroImageGeometry.capture(toHeroContext)
+      ? _HeroImageGeometry.capture(toHeroContext) ??
+            _HeroImageGeometry.fitContain(source.image, targetRenderObject)
       : _HeroImageGeometry.fitContain(source.image, targetRenderObject);
   if (target == null) return fromHero.child;
   return _HeroImageFlightMorph(
@@ -408,6 +413,7 @@ class ImageGalleryHeroThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Hero(
+    createRectTween: directImageRectTween,
     tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
     flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
     child: child,
@@ -424,6 +430,7 @@ class ImageGalleryPage extends StatefulWidget {
   final String? authorName;
   final Object? heroScope;
   final bool? useLiquidGlass;
+  final ValueChanged<int>? onPageChanged;
 
   const ImageGalleryPage({
     required this.app,
@@ -435,6 +442,7 @@ class ImageGalleryPage extends StatefulWidget {
     this.authorName,
     this.heroScope,
     this.useLiquidGlass,
+    this.onPageChanged,
   });
 
   @override
@@ -457,6 +465,11 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
   bool _hdrHybridSupported = false;
   bool? _windowHdrEnabled;
   final Set<String> _nativeHdrUrls = <String>{};
+  final Set<String> _failedOriginalUrls = <String>{};
+  final Set<String> _preparedOriginalUrls = <String>{};
+  final Set<String> _preparingOriginalUrls = <String>{};
+  final Map<String, int> _nativeViewEpochs = {};
+  Timer? _preloadTimer;
   final Map<String, ValueNotifier<Rect?>> _nativeHdrRects = {};
   late final AnimationController _chromeOpacityController;
   Animation<double>? _routeAnimation;
@@ -509,6 +522,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
     unawaited(_checkHdrDisplaySupport());
     HdrImageDetector.notifier.addListener(_onHdrDetected);
     _updateWindowHdr();
+    _schedulePreload();
   }
 
   Future<void> _checkHdrDisplaySupport() async {
@@ -537,6 +551,17 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
   }
 
   Future<void> _handleNativeMediaCall(MethodCall call) async {
+    if (call.method == 'hdrImageDecodeFailed') {
+      final args = call.arguments;
+      if (args is Map && mounted) {
+        final url = normalizeRedImageUrl(args['url']?.toString() ?? '');
+        setState(() {
+          _nativeHdrUrls.remove(url);
+          _preparedOriginalUrls.remove(url);
+        });
+      }
+      return;
+    }
     if (call.method != 'hdrImageDecoded') return;
     final args = call.arguments;
     if (args is! Map || args['hasGainMap'] != true) return;
@@ -589,6 +614,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
 
   @override
   void dispose() {
+    _preloadTimer?.cancel();
     _openingPreview?.dispose();
     HdrImageDetector.notifier.removeListener(_onHdrDetected);
     _mediaChannel.setMethodCallHandler(null);
@@ -619,6 +645,71 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
     if (!mounted) return;
     setState(() {});
     _updateWindowHdr();
+  }
+
+  void _schedulePreload() {
+    _preloadTimer?.cancel();
+    _preloadTimer = Timer(const Duration(milliseconds: 100), () async {
+      if (!mounted ||
+          _mainUserScrolling ||
+          _thumbnailUserScrolling ||
+          _thumbnailSettling) {
+        return;
+      }
+      final index = _currentIndex;
+      for (final adjacent in [index - 1, index + 1]) {
+        if (adjacent < 0 || adjacent >= widget.pics.length) continue;
+        final pic = widget.pics[adjacent];
+        // Preview warmup must not decode a full-size original as a second bitmap.
+        if (pic.previewUrl.isEmpty || pic.previewUrl == pic.originalUrl) {
+          continue;
+        }
+        unawaited(
+          precacheImage(
+            ExtendedNetworkImageProvider(
+              pic.previewUrl,
+              cache: true,
+              headers: redImageHeaders(pic.previewUrl, api: widget.app),
+              printError: false,
+            ),
+            context,
+            onError: (_, _) {},
+          ),
+        );
+      }
+      await _prepareOriginal(index);
+      if (mounted && _currentIndex == index && index + 1 < widget.pics.length) {
+        await _prepareOriginal(index + 1);
+      }
+    });
+  }
+
+  Future<void> _prepareOriginal(int index) async {
+    final pic = widget.pics[index];
+    final url = pic.originalUrl;
+    if (url.isEmpty ||
+        _preparedOriginalUrls.contains(url) ||
+        !_preparingOriginalUrls.add(url)) {
+      return;
+    }
+    try {
+      await GalleryOriginalLoader.load(
+        url,
+        redImageHeaders(url, api: widget.app, preserveHdr: true),
+      );
+      if (!mounted) return;
+      await HdrImageDetector.detectFromCache(url, warmup: true);
+      if (!mounted) return;
+      setState(() {
+        _nativeHdrUrls.remove(url);
+        _nativeViewEpochs[url] = (_nativeViewEpochs[url] ?? 0) + 1;
+        _preparedOriginalUrls.add(url);
+      });
+    } catch (_) {
+      // Every page retains its own preview; a failed prefetch never poisons the next page.
+    } finally {
+      _preparingOriginalUrls.remove(url);
+    }
   }
 
   void _retainOpeningPreview(ui.Image image) {
@@ -840,6 +931,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
         _thumbnailSettling = false;
         setState(() => _thumbnailScrollBottom = null);
         _activateCurrentMedia();
+        _schedulePreload();
       }),
     );
   }
@@ -853,6 +945,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
     return HeroMode(
       enabled: index == _currentIndex,
       child: Hero(
+        createRectTween: directImageRectTween,
         tag: ImageGalleryHeroTag.forPic(scope: scope, index: index, pic: pic),
         flightShuttleBuilder: imageGalleryHeroFlightShuttleBuilder,
         child: child,
@@ -869,6 +962,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
       _thumbnailSyncEpoch++;
       _thumbnailSettling = false;
       _thumbnailUserScrolling = true;
+      _nativeHdrUrls.remove(widget.pics[_currentIndex].originalUrl);
       _mainUserScrolling = false;
       _activeMediaIndex.value = -1;
       setState(() {});
@@ -1042,6 +1136,9 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                         _thumbnailUserScrolling = false;
                         _thumbnailSettling = false;
                         _mainUserScrolling = true;
+                        _nativeHdrUrls.remove(
+                          widget.pics[_currentIndex].originalUrl,
+                        );
                         _activeMediaIndex.value = -1;
                         _isMainPageScrolling.value = true;
                       }
@@ -1066,8 +1163,9 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                                   .value) {
                             _isMainPageScrolling.value = false;
                             if (_mainUserScrolling) {
-                              _mainUserScrolling = false;
+                              setState(() => _mainUserScrolling = false);
                               _activeMediaIndex.value = _currentIndex;
+                              _schedulePreload();
                             }
                           }
                         },
@@ -1096,8 +1194,13 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                     }
                     setState(() {
                       _currentIndex = index;
+                      if (didChange) {
+                        _nativeHdrUrls.remove(widget.pics[index].originalUrl);
+                      }
                     });
+                    if (didChange) widget.onPageChanged?.call(index);
                     _updateWindowHdr();
+                    _schedulePreload();
                     if (!_thumbnailUserScrolling &&
                         !_thumbnailSettling &&
                         _thumbnailController.hasClients) {
@@ -1108,29 +1211,59 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                   },
                   itemBuilder: (context, index) {
                     final pic = widget.pics[index];
+                    final displayUrl =
+                        _failedOriginalUrls.contains(pic.originalUrl)
+                        ? pic.previewUrl
+                        : pic.originalUrl;
                     final isLongPic =
                         pic.isLong ||
                         (pic.height > 0 &&
                             pic.width > 0 &&
                             pic.height / pic.width > 2.0);
 
-                    final foregroundImage = ExtendedImage.network(
-                      pic.originalUrl.isNotEmpty
-                          ? pic.originalUrl
-                          : (pic.largeUrl.isNotEmpty
-                                ? pic.largeUrl
-                                : pic.bmiddleUrl),
+                    final foregroundImage = ExtendedImage(
+                      key: ValueKey('gallery-image-$index'),
+                      gaplessPlayback: true,
+                      image:
+                          _preparedOriginalUrls.contains(displayUrl) ||
+                              (index == _currentIndex &&
+                                  !_mainUserScrolling &&
+                                  !_thumbnailUserScrolling &&
+                                  !_thumbnailSettling)
+                          ? GalleryOriginalProvider(
+                              displayUrl,
+                              redImageHeaders(
+                                displayUrl,
+                                api: widget.app,
+                                preserveHdr: true,
+                              ),
+                            )
+                          : ExtendedNetworkImageProvider(
+                              pic.previewUrl,
+                              cache: true,
+                              headers: redImageHeaders(
+                                pic.previewUrl,
+                                api: widget.app,
+                              ),
+                              printError: false,
+                            ),
                       width: double.infinity,
                       height: double.infinity,
-                      headers: redImageHeaders(
-                        pic.originalUrl,
-                        api: widget.app,
-                      ),
-                      cache: true,
+                      enableLoadState: true,
                       fit: BoxFit.contain,
                       mode: ExtendedImageMode.gesture,
                       enableSlideOutPage: false,
                       loadStateChanged: (state) {
+                        if (state.extendedImageLoadState == LoadState.failed &&
+                            displayUrl != pic.previewUrl &&
+                            pic.previewUrl.isNotEmpty) {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted &&
+                                _failedOriginalUrls.add(pic.originalUrl)) {
+                              setState(() {});
+                            }
+                          });
+                        }
                         if (state.extendedImageLoadState == LoadState.loading &&
                             index == widget.initialIndex &&
                             _openingPreview != null) {
@@ -1142,19 +1275,52 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                         }
                         if (state.extendedImageLoadState !=
                             LoadState.completed) {
-                          return null;
+                          if (state.extendedImageLoadState ==
+                                  LoadState.failed &&
+                              displayUrl == pic.previewUrl) {
+                            return Center(
+                              child: IconButton(
+                                tooltip: '重试图片',
+                                icon: const Icon(
+                                  Icons.refresh,
+                                  color: Colors.white70,
+                                ),
+                                onPressed: () {
+                                  setState(
+                                    () => _failedOriginalUrls.remove(
+                                      pic.originalUrl,
+                                    ),
+                                  );
+                                  state.reLoadImage();
+                                  _schedulePreload();
+                                },
+                              ),
+                            );
+                          }
+                          return pic.previewUrl.isNotEmpty &&
+                                  pic.previewUrl != displayUrl
+                              ? ExtendedImage.network(
+                                  pic.previewUrl,
+                                  key: ValueKey(
+                                    'gallery-loading-preview-$index',
+                                  ),
+                                  cache: true,
+                                  headers: redImageHeaders(
+                                    pic.previewUrl,
+                                    api: widget.app,
+                                  ),
+                                  fit: BoxFit.contain,
+                                  printError: false,
+                                )
+                              : const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white54,
+                                  ),
+                                );
                         }
-                        HdrImageDetector.detectFromCache(
-                          pic.originalUrl.isNotEmpty
-                              ? pic.originalUrl
-                              : pic.previewUrl,
-                          headers: redImageHeaders(
-                            pic.originalUrl.isNotEmpty
-                                ? pic.originalUrl
-                                : pic.previewUrl,
-                            api: widget.app,
-                          ),
-                        );
+                        if (index == _currentIndex) {
+                          HdrImageDetector.detectFromCache(displayUrl);
+                        }
                         return _pagingImages[state
                             .extendedImageInfo!] ??= ExtendedImageGesture(
                           state,
@@ -1293,12 +1459,10 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                           initialScale: 1.0,
                           inPageView: true,
                           initialAlignment: InitialAlignment.center,
-                          gestureDetailsIsChanged: pic.isHdr
-                              ? (details) {
-                                  _hdrRectFor(pic.originalUrl).value =
-                                      details?.destinationRect;
-                                }
-                              : null,
+                          gestureDetailsIsChanged: (details) {
+                            _hdrRectFor(pic.originalUrl).value =
+                                details?.destinationRect;
+                          },
                         );
                       },
                     );
@@ -1317,6 +1481,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                             _thumbnailUserScrolling ||
                             _thumbnailSettling;
                         final useNativeHdr =
+                            isCurrentPage &&
                             (_hdrHybridSupported ||
                                 (isCurrentPage &&
                                     !isScrolling &&
@@ -1337,17 +1502,21 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                               fit: StackFit.expand,
                               children: [
                                 heroImage,
-                                if (_hdrDisplaySupported &&
-                                    pic.isHdr &&
-                                    (_hdrHybridSupported ||
-                                        (isCurrentPage && !isScrolling)))
+                                if (isCurrentPage &&
+                                    _chromeRouteVisible &&
+                                    !isScrolling &&
+                                    _hdrDisplaySupported &&
+                                    _preparedOriginalUrls.contains(
+                                      normalizedUrl,
+                                    ) &&
+                                    pic.isHdr)
                                   ValueListenableBuilder<Rect?>(
                                     valueListenable: _hdrRectFor(
                                       pic.originalUrl,
                                     ),
                                     child: PlatformViewLink(
                                       key: ValueKey(
-                                        'native-hdr-$normalizedUrl',
+                                        'native-hdr-$normalizedUrl-${_nativeViewEpochs[normalizedUrl] ?? 0}',
                                       ),
                                       viewType: 'com.red.note/hdrImage',
                                       surfaceFactory: (context, controller) =>
@@ -1379,6 +1548,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                                               'headers': redImageHeaders(
                                                 pic.originalUrl,
                                                 api: widget.app,
+                                                preserveHdr: true,
                                               ),
                                             },
                                             creationParamsCodec:
@@ -1417,7 +1587,9 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                         );
                       },
                     );
-                    if (pic.badgeText.isEmpty) return image;
+                    if (pic.badgeText.isEmpty || pic.badgeText == 'HDR') {
+                      return image;
+                    }
 
                     final bottomOffset = widget.pics.length > 1
                         ? (_thumbnailBottom + 64 + 14)
@@ -1440,8 +1612,24 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
             ),
           ),
 
+          if (_showChrome &&
+              _chromeRouteVisible &&
+              widget.pics.isNotEmpty &&
+              HdrImageDetector.isKnownHdr(
+                widget.pics[_currentIndex].originalUrl,
+              ))
+            Positioned(
+              right: 16,
+              bottom: widget.pics.length > 1
+                  ? _thumbnailBottom + 64 + 14
+                  : MediaQuery.paddingOf(context).bottom + 24,
+              child: const IgnorePointer(
+                child: _GalleryMediaBadge(text: 'HDR'),
+              ),
+            ),
           if (widget.pics.length > 1)
             Positioned(
+              key: const ValueKey('gallery-thumbnail-position'),
               left: 12,
               right: 12,
               bottom: _thumbnailBottom,
@@ -1771,32 +1959,35 @@ class _GalleryMediaBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isHdr = text == 'HDR';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(
-          color: isHdr
-              ? Colors.white.withValues(alpha: 0.55)
-              : Colors.white.withValues(alpha: 0.25),
-          width: isHdr ? 1.0 : 0.6,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.35),
-            blurRadius: 4,
-            offset: const Offset(0, 1.5),
+    return Semantics(
+      label: isHdr ? 'HDR 图片' : text,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isHdr
+                ? Colors.white.withValues(alpha: 0.55)
+                : Colors.white.withValues(alpha: 0.25),
+            width: isHdr ? 1.0 : 0.6,
           ),
-        ],
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: isHdr ? FontWeight.w900 : FontWeight.bold,
-          letterSpacing: 0.6,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.35),
+              blurRadius: 4,
+              offset: const Offset(0, 1.5),
+            ),
+          ],
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: isHdr ? FontWeight.w900 : FontWeight.bold,
+            letterSpacing: 0.6,
+          ),
         ),
       ),
     );

@@ -13,12 +13,14 @@ class GalleryPage extends StatelessWidget {
     required this.initial,
     required this.scope,
     this.author,
+    this.onPageChanged,
   });
   final AppState app;
   final List<GalleryImage> pics;
   final String? author;
   final int initial;
   final Object scope;
+  final ValueChanged<int>? onPageChanged;
   @override
   Widget build(BuildContext context) => ImageGalleryPage(
     app: app,
@@ -28,6 +30,7 @@ class GalleryPage extends StatelessWidget {
     statusId: '',
     heroScope: scope,
     useLiquidGlass: app.liquidGlass,
+    onPageChanged: onPageChanged,
   );
 }
 

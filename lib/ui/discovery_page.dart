@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
@@ -22,6 +24,20 @@ class DiscoveryPageState extends State<DiscoveryPage> {
   @override
   void initState() {
     super.initState();
+    category =
+        widget.app.preferences.getString(
+          'discoveryCategory:${textOf(widget.app.user["user_id"])}',
+        ) ??
+        'homefeed_recommend';
+    try {
+      categories = objectsOf(
+        jsonDecode(
+          widget.app.preferences.getString('discoveryCategories') ?? '[]',
+        ),
+      );
+    } on FormatException {
+      categories = [];
+    }
     loadCategories();
   }
 
@@ -42,6 +58,10 @@ class DiscoveryPageState extends State<DiscoveryPage> {
           .toList();
       if (received.isEmpty) throw StateError('服务器未返回推荐分类');
       if (mounted) setState(() => categories = received);
+      await widget.app.preferences.setString(
+        'discoveryCategories',
+        jsonEncode(received),
+      );
     } catch (error) {
       if (mounted) setState(() => failure = error);
     } finally {
@@ -62,8 +82,11 @@ class DiscoveryPageState extends State<DiscoveryPage> {
       ...categories.where(
         (choice) => textOf(choice['id']) != 'homefeed_recommend',
       ),
+      if (categories.isEmpty)
+        for (final name in ['穿搭', '美食', '彩妆', '影视', '职场']) {'name': name},
     ];
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -72,8 +95,15 @@ class DiscoveryPageState extends State<DiscoveryPage> {
             children: [
               for (final choice in choices)
                 TextButton(
-                  onPressed: () =>
-                      setState(() => category = textOf(choice['id'])),
+                  onPressed: textOf(choice['id']).isEmpty
+                      ? null
+                      : () {
+                          setState(() => category = textOf(choice['id']));
+                          widget.app.preferences.setString(
+                            'discoveryCategory:${textOf(widget.app.user["user_id"])}',
+                            category,
+                          );
+                        },
                   style: TextButton.styleFrom(
                     foregroundColor: category == textOf(choice['id'])
                         ? Theme.of(context).colorScheme.onSurface

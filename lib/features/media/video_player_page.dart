@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../app_state.dart';
 import '../../data/red_api.dart';
+import '../../data/media_support.dart';
 import '../../core/storage/storage_path_resolver.dart';
 import '../../core/utils/app_toast.dart';
 import '../../core/utils/haptic_feedback_util.dart';
@@ -72,6 +74,8 @@ class _RedVideoPlayerPageState extends State<RedVideoPlayerPage>
   String _playableUrl = '';
   String _audioUrl = '';
   bool _isSavingVideo = false;
+  String _quality = 'auto';
+  bool _playingHdr = false;
   DateTime _lastPositionPaint = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
@@ -88,6 +92,9 @@ class _RedVideoPlayerPageState extends State<RedVideoPlayerPage>
     WidgetsBinding.instance.removeObserver(this);
     const MethodChannel('com.red.note/media')
         .invokeMethod<void>('setBrightness', {'value': -1.0});
+    const MethodChannel('com.red.note/media')
+        .invokeMethod<void>('setWindowHdr', {'enabled': false})
+        .catchError((_) {});
     _hideControlsTimer?.cancel();
     _hudDismissTimer?.cancel();
     _controller?.dispose();
@@ -104,23 +111,47 @@ class _RedVideoPlayerPageState extends State<RedVideoPlayerPage>
     if (state != AppLifecycleState.resumed) _controller?.pause();
   }
 
-  Future<void> _initAndPlay() async {
+  Future<void> _initAndPlay({Duration position = Duration.zero}) async {
     final epoch = ++_playEpoch;
     setState(() {
       _hasError = false;
       _errorMessage = '';
       _isInitialized = false;
     });
-    await _controller?.dispose();
+    final previous = _controller;
     _controller = null;
-    for (final source in widget.sources.take(8)) {
+    await previous?.dispose();
+    if (!mounted || epoch != _playEpoch) return;
+    var hdrSupported = false;
+    try {
+      hdrSupported =
+          await const MethodChannel('com.red.note/media')
+              .invokeMethod<bool>('isHdrVideoDisplaySupported') ??
+          false;
+    } catch (_) {
+      // Older platform implementations keep the SDR-first order.
+    }
+    if (!mounted || epoch != _playEpoch) return;
+    final referer = widget.app.session['region'] == 'rednote'
+        ? 'https://www.rednote.com/'
+        : 'https://www.xiaohongshu.com/';
+    final attempts = await resolveVideoSources(
+      widget.sources,
+      hdrSupported: hdrSupported,
+      referer: referer,
+      original: _quality == 'original',
+      preferSdr: _quality == 'sdr',
+    );
+    if (!mounted || epoch != _playEpoch) return;
+    for (final source in attempts) {
       final controller = VideoPlayerController.networkUrl(
         Uri.parse(source.url),
+        viewType: defaultTargetPlatform == TargetPlatform.android
+            ? VideoViewType.platformView
+            : VideoViewType.textureView,
         httpHeaders: {
           if (source.audioUrl.isNotEmpty) 'RedNote-Audio-Url': source.audioUrl,
-          'Referer': widget.app.session['region'] == 'rednote'
-              ? 'https://www.rednote.com/'
-              : 'https://www.xiaohongshu.com/',
+          'Referer': referer,
         },
       );
       try {
@@ -136,10 +167,26 @@ class _RedVideoPlayerPageState extends State<RedVideoPlayerPage>
         await controller.setLooping(true);
         await controller.setPlaybackSpeed(_playbackSpeed);
         await controller.setVolume(_volumeLevel);
+        await const MethodChannel('com.red.note/media')
+            .invokeMethod<void>('setWindowHdr', {
+              'enabled': hdrSupported && (source.isHdr || source.isOriginal),
+            })
+            .catchError((_) {});
+        if (position > Duration.zero) await controller.seekTo(position);
         if (!mounted || epoch != _playEpoch) return;
         await controller.play();
         if (!mounted || epoch != _playEpoch) return;
-        setState(() => _isInitialized = true);
+        if ((_quality == 'original' || attempts.first.isHdr) &&
+            !source.isHdr &&
+            !source.isOriginal &&
+            mounted) {
+          AppToast.show(context, '高画质无法播放，已使用兼容视频流');
+        }
+        setState(() {
+          _isInitialized = true;
+          _playingHdr = source.isHdr;
+          if (_quality == 'original' && !source.isOriginal) _quality = 'auto';
+        });
         return;
       } catch (_) {
         await controller.dispose();
@@ -357,120 +404,132 @@ class _RedVideoPlayerPageState extends State<RedVideoPlayerPage>
     final position = c?.value.position ?? Duration.zero;
     final duration = c?.value.duration ?? Duration.zero;
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 1. 视频渲染核心与手势捕获
-          if (_isInitialized && c != null && !_hasError)
-            GestureDetector(
-              onTap: _toggleControls,
-              onDoubleTapDown: (details) {
-                final width = MediaQuery.of(context).size.width;
-                final dx = details.localPosition.dx;
-                if (dx < width * 0.35) {
-                  _seekBy(-10);
-                } else if (dx > width * 0.65) {
-                  _seekBy(10);
-                } else {
-                  _togglePlayPause();
-                }
-              },
-              onLongPressStart: (_) => _startFastForward(),
-              onLongPressEnd: (_) => _stopFastForward(),
-              onVerticalDragStart: (details) {
-                _panStartPos = details.localPosition;
-                final width = MediaQuery.of(context).size.width;
-                if (_panStartPos.dx < width * 0.5) {
-                  _dragMode = _VideoDragMode.brightness;
-                } else {
-                  _dragMode = _VideoDragMode.volume;
-                }
-              },
-              onVerticalDragUpdate: (details) {
-                final delta = -(details.primaryDelta ?? 0) / 200.0;
-                if (_dragMode == _VideoDragMode.brightness) {
-                  final b = (_brightnessLevel + delta).clamp(0.1, 1.0);
-                  setState(() => _brightnessLevel = b);
-                  const MethodChannel('com.red.note/media').invokeMethod<void>(
-                    'setBrightness',
-                    {'value': _brightnessLevel},
-                  );
-                  _showHud(_VideoHudType.brightness);
-                } else if (_dragMode == _VideoDragMode.volume) {
-                  final v = (_volumeLevel + delta).clamp(0.0, 1.0);
-                  setState(() => _volumeLevel = v);
-                  _controller?.setVolume(v);
-                  _showHud(_VideoHudType.volume);
-                }
-              },
-              onVerticalDragEnd: (_) {
-                _dragMode = _VideoDragMode.none;
-              },
-              child: Center(
-                child: AspectRatio(
-                  aspectRatio: c.value.aspectRatio > 0
-                      ? c.value.aspectRatio
-                      : 16 / 9,
-                  child: VideoPlayer(c),
+    return PopScope(
+      canPop: _showControls && !_isLandscape,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (_isLandscape) {
+          _toggleOrientation();
+        } else if (!_showControls) {
+          _toggleControls();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 1. 视频渲染核心与手势捕获
+            if (_isInitialized && c != null && !_hasError)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _toggleControls,
+                onDoubleTapDown: (details) {
+                  final width = MediaQuery.of(context).size.width;
+                  final dx = details.localPosition.dx;
+                  if (dx < width * 0.35) {
+                    _seekBy(-10);
+                  } else if (dx > width * 0.65) {
+                    _seekBy(10);
+                  } else {
+                    _togglePlayPause();
+                  }
+                },
+                onLongPressStart: (_) => _startFastForward(),
+                onLongPressEnd: (_) => _stopFastForward(),
+                onVerticalDragStart: (details) {
+                  _panStartPos = details.localPosition;
+                  final width = MediaQuery.of(context).size.width;
+                  if (_panStartPos.dx < width * 0.5) {
+                    _dragMode = _VideoDragMode.brightness;
+                  } else {
+                    _dragMode = _VideoDragMode.volume;
+                  }
+                },
+                onVerticalDragUpdate: (details) {
+                  final delta = -(details.primaryDelta ?? 0) / 200.0;
+                  if (_dragMode == _VideoDragMode.brightness) {
+                    final b = (_brightnessLevel + delta).clamp(0.1, 1.0);
+                    setState(() => _brightnessLevel = b);
+                    const MethodChannel('com.red.note/media')
+                        .invokeMethod<void>('setBrightness', {
+                          'value': _brightnessLevel,
+                        });
+                    _showHud(_VideoHudType.brightness);
+                  } else if (_dragMode == _VideoDragMode.volume) {
+                    final v = (_volumeLevel + delta).clamp(0.0, 1.0);
+                    setState(() => _volumeLevel = v);
+                    _controller?.setVolume(v);
+                    _showHud(_VideoHudType.volume);
+                  }
+                },
+                onVerticalDragEnd: (_) {
+                  _dragMode = _VideoDragMode.none;
+                },
+                child: Center(
+                  child: AspectRatio(
+                    aspectRatio: c.value.aspectRatio > 0
+                        ? c.value.aspectRatio
+                        : 16 / 9,
+                    child: IgnorePointer(child: VideoPlayer(c)),
+                  ),
                 ),
+              )
+            else if (_hasError)
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        color: Colors.white70,
+                        size: 48,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        _errorMessage.isNotEmpty ? _errorMessage : '视频加载失败',
+                        style: const TextStyle(color: Colors.white70),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton.tonalIcon(
+                        onPressed: _initAndPlay,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('重试加载'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              const Center(
+                child: CircularProgressIndicator(color: Colors.white70),
               ),
-            )
-          else if (_hasError)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+
+            // 3. 手势与状态 HUD
+            IgnorePointer(child: Center(child: _buildHud())),
+
+            // 4. 浮动控制层 (Controls Overlay)
+            AnimatedOpacity(
+              opacity: _showControls ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 220),
+              child: IgnorePointer(
+                ignoring: !_showControls,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(
-                      Icons.error_outline_rounded,
-                      color: Colors.white70,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      _errorMessage.isNotEmpty ? _errorMessage : '视频加载失败',
-                      style: const TextStyle(color: Colors.white70),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    FilledButton.tonalIcon(
-                      onPressed: _initAndPlay,
-                      icon: const Icon(Icons.refresh_rounded),
-                      label: const Text('重试加载'),
-                    ),
+                    // 顶部 AppBar
+                    _buildTopBar(),
+                    const Spacer(),
+                    // 底部播放控制条
+                    _buildBottomBar(position, duration, isPlaying),
                   ],
                 ),
               ),
-            )
-          else
-            const Center(
-              child: CircularProgressIndicator(color: Colors.white70),
             ),
-
-          // 3. 手势与状态 HUD
-          Center(child: _buildHud()),
-
-          // 4. 浮动控制层 (Controls Overlay)
-          AnimatedOpacity(
-            opacity: _showControls ? 1.0 : 0.0,
-            duration: const Duration(milliseconds: 220),
-            child: IgnorePointer(
-              ignoring: !_showControls,
-              child: Column(
-                children: [
-                  // 顶部 AppBar
-                  _buildTopBar(),
-                  const Spacer(),
-                  // 底部播放控制条
-                  _buildBottomBar(position, duration, isPlaying),
-                ],
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -523,6 +582,28 @@ class _RedVideoPlayerPageState extends State<RedVideoPlayerPage>
                 ],
               ),
             ),
+            if (widget.sources.any((source) => source.isOriginal))
+              PopupMenuButton<String>(
+                tooltip: '画质',
+                icon: Icon(
+                  Icons.high_quality_outlined,
+                  color: _playingHdr
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.white,
+                ),
+                initialValue: _quality,
+                onSelected: (quality) {
+                  if (quality == _quality) return;
+                  final position = _controller?.value.position ?? Duration.zero;
+                  _quality = quality;
+                  _initAndPlay(position: position);
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'auto', child: Text('自动（HDR 优先）')),
+                  PopupMenuItem(value: 'sdr', child: Text('兼容画质（节省流量）')),
+                  PopupMenuItem(value: 'original', child: Text('原画（流量较大）')),
+                ],
+              ),
             IconButton(
               icon: _isSavingVideo
                   ? const SizedBox.square(

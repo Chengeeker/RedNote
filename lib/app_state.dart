@@ -13,6 +13,57 @@ class AppState extends ChangeNotifier {
   bool loginBusy = false;
   String? error;
   int epoch = 0;
+  final _noteInteractions = <String, Json>{};
+  final _noteMutations = <String>{};
+
+  Json noteInteraction(Note note) => {
+    ...objectOf(note.raw['interact_info']),
+    ...?_noteInteractions[note.reference.id],
+  };
+
+  bool noteInteractionBusy(Note note, String method) =>
+      _noteMutations.contains('${note.reference.id}:$method');
+
+  Future<void> toggleNoteInteraction(Note note, String method) async {
+    final id = note.reference.id;
+    final request = '$id:$method';
+    if (!_noteMutations.add(request)) return;
+    final key = method == 'likeNote' ? 'liked' : 'collected';
+    final countKey = method == 'likeNote' ? 'liked_count' : 'collected_count';
+    final previous = _noteInteractions[id]?[key];
+    final previousCount = _noteInteractions[id]?[countKey];
+    final interaction = noteInteraction(note);
+    final value = interaction[key] != true;
+    final count = textOf(
+      interaction[countKey] ??
+          (key == 'collected' ? interaction['collect_count'] : null),
+    );
+    final exact = int.tryParse(count);
+    final changes = _noteInteractions.putIfAbsent(id, () => {});
+    changes[key] = value;
+    if (exact != null || count.isEmpty) {
+      changes[countKey] = ((exact ?? 0) + (value ? 1 : -1)).clamp(
+        0,
+        0x7fffffff,
+      );
+    }
+    final currentEpoch = epoch;
+    notifyListeners();
+    try {
+      await api.call(method, {...note.reference.args, 'value': value});
+    } catch (_) {
+      if (currentEpoch == epoch) {
+        previous == null ? changes.remove(key) : changes[key] = previous;
+        previousCount == null
+            ? changes.remove(countKey)
+            : changes[countKey] = previousCount;
+      }
+      rethrow;
+    } finally {
+      _noteMutations.remove(request);
+      notifyListeners();
+    }
+  }
 
   bool get loggedIn => session['loggedIn'] == true;
   Json get user => objectOf(session['user']);
@@ -58,6 +109,7 @@ class AppState extends ChangeNotifier {
       if (loggedIn &&
           (textOf(user['user_id']) != before || session['blocked'] == null)) {
         epoch++;
+        _noteInteractions.clear();
       }
     } catch (e) {
       error = errorText(e);
@@ -71,6 +123,7 @@ class AppState extends ChangeNotifier {
     await api.call('logout');
     session = {};
     epoch++;
+    _noteInteractions.clear();
     error = null;
     notifyListeners();
   }
