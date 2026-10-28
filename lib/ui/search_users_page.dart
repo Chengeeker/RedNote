@@ -104,8 +104,12 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           error: failure,
           onRetry: load,
           onLogin: () => signIn(context, widget.app),
-          onVerification: () =>
-              signIn(context, widget.app, manualVerification: true),
+          onVerification: (verificationUrl) => signIn(
+            context,
+            widget.app,
+            manualVerification: true,
+            verificationUrl: verificationUrl,
+          ),
         )
       else
         Center(

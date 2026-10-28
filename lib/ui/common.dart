@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:extended_image/extended_image.dart'
+    show ExtendedNetworkImageProvider;
 import 'package:flutter/services.dart';
 import 'package:flutter/gestures.dart';
 
@@ -19,11 +21,21 @@ class LoadMessage extends StatelessWidget {
   final Object? error;
   final VoidCallback? onRetry;
   final Future<bool> Function()? onLogin;
-  final Future<bool> Function()? onVerification;
+  final Future<bool> Function(String?)? onVerification;
   @override
   Widget build(BuildContext context) {
     final verification = isVerificationError(error);
-    final login = verification ? onVerification ?? onLogin : onLogin;
+    final details = error is PlatformException
+        ? objectOf((error as PlatformException).details)
+        : <String, dynamic>{};
+    final verificationUrl = textOf(details['verificationUrl']);
+    final canOpenVerification =
+        !details.containsKey('verificationUrl') || verificationUrl.isNotEmpty;
+    final Future<bool> Function()? login = verification && !canOpenVerification
+        ? null
+        : verification && onVerification != null
+        ? () => onVerification!(verificationUrl)
+        : onLogin;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
@@ -57,7 +69,7 @@ class LoadMessage extends StatelessWidget {
                 icon: Icon(
                   verification ? Icons.verified_user_outlined : Icons.login,
                 ),
-                label: Text(verification ? '前往完成拖拽验证' : '网页登录'),
+                label: Text(verification ? '前往官方安全验证' : '网页登录'),
               )
             else if (onRetry != null)
               OutlinedButton.icon(
@@ -65,6 +77,8 @@ class LoadMessage extends StatelessWidget {
                 icon: const Icon(Icons.refresh),
                 label: const Text('重试'),
               ),
+            if (verification && login != null && onRetry != null)
+              TextButton(onPressed: onRetry, child: const Text('重试此请求')),
           ],
         ),
       ),
@@ -80,12 +94,14 @@ class RemoteImage extends StatelessWidget {
     this.label,
     this.decodeWidth,
     this.api,
+    this.cacheLocally = false,
   });
   final String url;
   final BoxFit fit;
   final String? label;
   final int? decodeWidth;
   final AppState? api;
+  final bool cacheLocally;
   @override
   Widget build(BuildContext context) {
     Widget fallback() => ColoredBox(
@@ -98,13 +114,23 @@ class RemoteImage extends StatelessWidget {
       ),
     );
     if (url.isEmpty) return fallback();
-    return Image.network(
-      url,
+    final headers = redImageHeaders(url, api: api);
+    final ImageProvider<Object> provider = cacheLocally
+        ? ExtendedNetworkImageProvider(
+            url,
+            cache: true,
+            headers: headers,
+            retries: 3,
+            printError: false,
+          )
+        : NetworkImage(url, headers: headers);
+    return Image(
+      image: decodeWidth == null
+          ? provider
+          : ResizeImage(provider, width: decodeWidth),
       fit: fit,
       semanticLabel: label,
       excludeFromSemantics: label == null,
-      cacheWidth: decodeWidth,
-      headers: redImageHeaders(url, api: api),
       frameBuilder: (context, child, frame, sync) =>
           sync || frame != null ? child : fallback(),
       errorBuilder: (context, error, stack) => fallback(),
@@ -265,8 +291,12 @@ Future<bool> signIn(
   BuildContext context,
   AppState app, {
   bool manualVerification = false,
+  String? verificationUrl,
 }) async {
-  await app.login(manualVerification: manualVerification);
+  await app.login(
+    manualVerification: manualVerification,
+    verificationUrl: verificationUrl,
+  );
   if (context.mounted && app.error != null) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(app.error!)));

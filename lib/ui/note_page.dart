@@ -340,7 +340,7 @@ class _NotePageState extends State<NotePage> {
               AdaptiveGlass(
                 key: ValueKey('$key-glass'),
                 shape: const LiquidRoundedSuperellipse(borderRadius: 9999),
-                settings: ReviewNavigationBar.liquidGlassSettings,
+                settings: ReviewNavigationBar.liquidGlassSettingsFor(context),
                 quality: ReviewNavigationBar.liquidGlassQuality,
                 child: const SizedBox.expand(),
               ),
@@ -609,6 +609,9 @@ class _NotePageState extends State<NotePage> {
                                   onTap: () => Navigator.push(
                                     context,
                                     PhysicsSpringGalleryRoute<void>(
+                                      transitionDuration: const Duration(
+                                        milliseconds: 330,
+                                      ),
                                       child: GalleryPage(
                                         app: widget.app,
                                         pics: pics,
@@ -704,8 +707,12 @@ class _NotePageState extends State<NotePage> {
                   error: failure,
                   onRetry: load,
                   onLogin: () => signIn(context, widget.app),
-                  onVerification: () =>
-                      signIn(context, widget.app, manualVerification: true),
+                  onVerification: (verificationUrl) => signIn(
+                    context,
+                    widget.app,
+                    manualVerification: true,
+                    verificationUrl: verificationUrl,
+                  ),
                 ),
               Padding(
                 padding: const EdgeInsets.all(16),
@@ -864,8 +871,12 @@ class _NotePageState extends State<NotePage> {
                   error: commentFailure,
                   onRetry: loadComments,
                   onLogin: () => signIn(context, widget.app),
-                  onVerification: () =>
-                      signIn(context, widget.app, manualVerification: true),
+                  onVerification: (verificationUrl) => signIn(
+                    context,
+                    widget.app,
+                    manualVerification: true,
+                    verificationUrl: verificationUrl,
+                  ),
                 )
               else if (!loading && failure == null && !commentBusy)
                 Center(
@@ -1131,6 +1142,7 @@ class _CommentTileState extends State<CommentTile> {
                       onTap: () => Navigator.push(
                         context,
                         PhysicsSpringGalleryRoute<void>(
+                          transitionDuration: const Duration(milliseconds: 330),
                           child: GalleryPage(
                             app: app,
                             pics: commentPics,
@@ -1446,8 +1458,12 @@ class _RepliesPageState extends State<RepliesPage> {
             error: failure,
             onRetry: load,
             onLogin: () => signIn(context, widget.app),
-            onVerification: () =>
-                signIn(context, widget.app, manualVerification: true),
+            onVerification: (verificationUrl) => signIn(
+              context,
+              widget.app,
+              manualVerification: true,
+              verificationUrl: verificationUrl,
+            ),
           )
         else
           Center(

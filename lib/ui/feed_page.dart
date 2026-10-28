@@ -259,8 +259,12 @@ class FeedPageState extends State<FeedPage> {
               error: failure,
               onRetry: failure == null ? refresh : retry,
               onLogin: () => signIn(context, widget.app),
-              onVerification: () =>
-                  signIn(context, widget.app, manualVerification: true),
+              onVerification: (verificationUrl) => signIn(
+                context,
+                widget.app,
+                manualVerification: true,
+                verificationUrl: verificationUrl,
+              ),
             );
       return CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -308,6 +312,7 @@ class FeedPageState extends State<FeedPage> {
                         showViewCount: widget.showViewCount,
                         viewCount: widget.viewCounts[notes[index].reference.id]
                             ?.toString(),
+                        clearFocusOnReturn: widget.method == 'search',
                       ),
                       childCount: notes.length,
                     ),
@@ -362,11 +367,13 @@ class NoteTile extends StatelessWidget {
     required this.app,
     this.showViewCount = false,
     this.viewCount,
+    this.clearFocusOnReturn = false,
   });
   final Note note;
   final AppState app;
   final bool showViewCount;
   final String? viewCount;
+  final bool clearFocusOnReturn;
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: app,
@@ -397,12 +404,25 @@ class NoteTile extends StatelessWidget {
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      onTap: () => Navigator.of(context).push(
-        PhysicsSpringGalleryRoute<void>(
-          child: NotePage(app: app, initial: note),
-          opaque: true,
-        ),
-      ),
+      onTap: () async {
+        if (clearFocusOnReturn) {
+          FocusScope.of(context).unfocus(disposition: UnfocusDisposition.scope);
+        }
+        await Navigator.of(context).push(
+          PhysicsSpringGalleryRoute<void>(
+            child: NotePage(app: app, initial: note),
+            opaque: true,
+          ),
+        );
+        if (context.mounted && clearFocusOnReturn) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (context.mounted) {
+              FocusScope.of(context)
+                  .unfocus(disposition: UnfocusDisposition.scope);
+            }
+          });
+        }
+      },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -418,6 +438,7 @@ class NoteTile extends StatelessWidget {
                     builder: (context, box) => RemoteImage(
                       note.coverUrl,
                       api: app,
+                      cacheLocally: true,
                       decodeWidth:
                           (box.maxWidth *
                                   MediaQuery.devicePixelRatioOf(context))

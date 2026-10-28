@@ -223,7 +223,7 @@ class SearchPageState extends State<SearchPage> {
     final value = input.text.trim();
     if (value.isEmpty) return;
     suggestionTimer?.cancel();
-    FocusScope.of(context).unfocus();
+    FocusScope.of(context).unfocus(disposition: UnfocusDisposition.scope);
     setState(() {
       keyword = value;
       users = false;
@@ -384,7 +384,6 @@ class SearchPageState extends State<SearchPage> {
                         Expanded(
                           child: TextField(
                             controller: input,
-                            autofocus: true,
                             textInputAction: TextInputAction.search,
                             onSubmitted: (_) => unawaited(submit()),
                             onChanged: (value) {

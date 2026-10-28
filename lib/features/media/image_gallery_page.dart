@@ -461,6 +461,8 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
   bool _isSaving = false;
   bool _showChrome = true;
   bool _chromeRouteVisible = false;
+  bool _isReturning = false;
+  bool _liquidGlassEnabled = false;
   bool _hdrDisplaySupported = false;
   bool _hdrHybridSupported = false;
   bool? _windowHdrEnabled;
@@ -603,11 +605,24 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
 
   void _handleRouteAnimationStatus(AnimationStatus status) {
     final visible = status == AnimationStatus.completed;
-    if (!mounted || visible == _chromeRouteVisible) return;
-    setState(() => _chromeRouteVisible = visible);
+    final returning =
+        status == AnimationStatus.reverse ||
+        (_isReturning && status != AnimationStatus.completed);
+    if (!mounted ||
+        (visible == _chromeRouteVisible && returning == _isReturning)) {
+      return;
+    }
+    setState(() {
+      _chromeRouteVisible = visible;
+      _isReturning = returning;
+    });
     if (visible) {
       _chromeOpacityController.forward();
-    } else {
+    } else if (status == AnimationStatus.reverse && _liquidGlassEnabled) {
+      _chromeOpacityController
+        ..stop()
+        ..value = 0;
+    } else if (status == AnimationStatus.reverse) {
       _chromeOpacityController.reverse();
     }
   }
@@ -1111,6 +1126,8 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
   }
 
   Widget _buildGallery(BuildContext context, bool useLiquidGlass) {
+    _liquidGlassEnabled = useLiquidGlass;
+    final hideChromeForReturn = useLiquidGlass && _isReturning;
     final galleryPage = Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -1627,7 +1644,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
                 child: _GalleryMediaBadge(text: 'HDR'),
               ),
             ),
-          if (widget.pics.length > 1)
+          if (widget.pics.length > 1 && !hideChromeForReturn)
             Positioned(
               key: const ValueKey('gallery-thumbnail-position'),
               left: 12,
@@ -1650,7 +1667,7 @@ class _ImageGalleryPageState extends State<ImageGalleryPage>
             ),
 
           // Top Bar: Back, Counter, Live Pill, Save
-          if (_showChrome)
+          if (_showChrome && !hideChromeForReturn)
             IgnorePointer(
               key: const ValueKey('gallery-top-controls-pointer-gate'),
               ignoring: !_chromeRouteVisible,

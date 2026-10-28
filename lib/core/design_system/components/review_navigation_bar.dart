@@ -30,6 +30,16 @@ class ReviewNavigationBar extends ConsumerStatefulWidget {
   final ValueChanged<int> onSelected;
   final bool hasBottomInset;
 
+  static LiquidGlassSettings liquidGlassSettingsFor(
+    BuildContext context, [
+    LiquidGlassSettings? settings,
+  ]) {
+    final base = settings ?? liquidGlassSettings;
+    return Theme.of(context).brightness == Brightness.light
+        ? base.copyWith(glassColor: const Color(0xF0FFFFFF), rimLight: 1)
+        : base;
+  }
+
   static const liquidGlassSettings = LiquidGlassSettings(
     glassColor: Color(0x66000000),
     bodyMode: GlassBodyMode.clear,
@@ -371,8 +381,27 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
   }
 
   Widget _buildLiquidGlassBar(BuildContext context) {
-    const indicatorColor = Color(0x66000000);
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isLightMode = theme.brightness == Brightness.light;
+    final indicatorColor = isLightMode
+        ? const Color(0x26000000)
+        : const Color(0x66000000);
     const interactionGlowColor = Color(0x20FFFFFF);
+    final glassSettings = ReviewNavigationBar.liquidGlassSettingsFor(
+      context,
+      isLightMode
+          ? ReviewNavigationBar.liquidGlassSettings.copyWith(
+              shadowElevation: 0.55,
+            )
+          : null,
+    );
+    final selectedContentColor = isLightMode
+        ? colorScheme.primary
+        : Colors.white;
+    final unselectedContentColor = isLightMode
+        ? colorScheme.onSurfaceVariant
+        : Colors.white;
 
     return SafeArea(
       minimum: const EdgeInsets.only(bottom: 21),
@@ -436,12 +465,20 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
                     indicatorBorderRadius: 9999,
                     verticalPadding: 0,
                     // GlassTabBar's own preset overrides GlassTheme settings.
-                    settings: ReviewNavigationBar.liquidGlassSettings,
+                    settings: glassSettings,
                     quality: ReviewNavigationBar.liquidGlassQuality,
                     backgroundQuality: ReviewNavigationBar.liquidGlassQuality,
-                    indicatorSettings: const LiquidGlassSettings(
+                    indicatorSettings: LiquidGlassSettings(
+                      glassColor: isLightMode
+                          ? const Color(0x18000000)
+                          : const Color(0x00FFFFFF),
+                      bodyMode: isLightMode
+                          ? GlassBodyMode.clear
+                          : GlassBodyMode.adaptive,
                       refractiveIndex: 1.18,
                       chromaticAberration: 0.025,
+                      rimShade: isLightMode ? 0.12 : 0,
+                      rimLight: isLightMode ? 0.35 : 0,
                     ),
                     innerBlur: 6,
                     indicatorColor: indicatorColor,
@@ -454,13 +491,28 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
                           )
                         : EdgeInsets.zero,
                     pressScale: 1.06,
-                    selectedIconColor: Colors.white,
-                    selectedLabelColor: Colors.white,
-                    unselectedIconColor: Colors.white,
-                    unselectedLabelColor: Colors.white,
+                    selectedIconColor: selectedContentColor,
+                    selectedLabelColor: selectedContentColor,
+                    unselectedIconColor: unselectedContentColor,
+                    unselectedLabelColor: unselectedContentColor,
                   ),
                 ),
               ),
+              if (isLightMode)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      key: const ValueKey('liquid-glass-light-rim'),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(9999),
+                        border: Border.all(
+                          color: const Color(0xF5FFFFFF),
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               // The library's extraButton only supports a left or right slot.
               Positioned.fill(
                 child: Padding(

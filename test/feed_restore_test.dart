@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:extended_image/extended_image.dart'
+    show ExtendedNetworkImageProvider;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:rednote/app_state.dart';
 import 'package:rednote/data/red_api.dart';
@@ -22,7 +24,12 @@ void main() {
               for (var i = 0; i < 30; i++)
                 {
                   'id': 'n$i',
-                  'note_card': {'title': 'note $i'},
+                  'note_card': {
+                    'title': 'note $i',
+                    'cover': {
+                      'url_default': 'https://sns-webpic-qc.xhscdn.com/cover$i',
+                    },
+                  },
                 },
             ],
             'cursor': 'next',
@@ -60,6 +67,14 @@ void main() {
       expect(calls.length, 1);
       expect(key.currentState!.notes.length, 30);
       expect(key.currentState!.scroll.offset, 300);
+      expect(
+        key.currentState!.notes.first.coverUrl,
+        'https://sns-webpic-qc.xhscdn.com/cover0',
+      );
+      final cover = tester.widget<Image>(find.byType(Image).first);
+      final provider = (cover.image as ResizeImage).imageProvider;
+      expect(provider, isA<ExtendedNetworkImageProvider>());
+      expect((provider as ExtendedNetworkImageProvider).cache, isTrue);
       await key.currentState!.load();
       await tester.pumpAndSettle();
       expect(calls.last['cursor'], 'next');

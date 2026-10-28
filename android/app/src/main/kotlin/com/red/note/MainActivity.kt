@@ -3,6 +3,7 @@ package com.red.note
 import android.content.Intent
 import android.os.Bundle
 import android.webkit.CookieManager
+import com.red.note.protocol.VerificationPageUrl
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -28,10 +29,17 @@ class MainActivity: FlutterActivity() {
                     result.error("busy", "登录页面已打开", null)
                     return@setMethodCallHandler
                 }
+                val manual = call.argument<Boolean>("manualVerification") == true
+                val verificationUrl = call.argument<String>("verificationUrl") ?: runtime.verificationPageUrl()
+                if (manual && !VerificationPageUrl.isTrusted(verificationUrl)) {
+                    result.error("verification", "接口未提供可用的官方验证入口，请重试原请求取得新的验证信息；普通发现页无法代替本次验证", null)
+                    return@setMethodCallHandler
+                }
                 loginResult = result
                 startActivityForResult(
                     Intent(this, LoginActivity::class.java)
-                        .putExtra("manual_verification", call.argument<Boolean>("manualVerification") == true),
+                        .putExtra("manual_verification", manual)
+                        .putExtra("verification_url", if (manual) verificationUrl else ""),
                     42
                 )
             } else if (call.method == "syncCreatorStats") {

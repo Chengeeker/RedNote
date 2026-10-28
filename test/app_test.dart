@@ -95,6 +95,18 @@ void main() {
               ],
               'has_more': false,
             },
+            'search' => {
+              'items': [
+                {
+                  'id': 'search-note',
+                  'note_card': {
+                    'title': '测试笔记',
+                    'user': {'nickname': '作者', 'user_id': 'author-id'},
+                  },
+                },
+              ],
+              'has_more': false,
+            },
             'detail' => {
               'items': [
                 {
@@ -360,6 +372,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('返回发现'), findsOneWidget);
     expect(find.text('搜索'), findsOneWidget);
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    expect(tester.testTextInput.isVisible, isTrue);
     await tester.enterText(find.byType(TextField), '博领家具');
     await tester.tap(find.text('搜索'));
     await tester.pumpAndSettle();
@@ -369,6 +385,13 @@ void main() {
       calls.singleWhere((call) => call.method == 'search').arguments['keyword'],
       '博领家具',
     );
+    expect(tester.testTextInput.isVisible, isFalse);
+    await tester.tap(find.text('测试笔记').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(BackButton).first);
+    await tester.pumpAndSettle();
+    expect(find.text('全部'), findsOneWidget);
+    expect(tester.testTextInput.isVisible, isFalse);
     await tester.tap(find.text('用户'));
     await tester.pumpAndSettle();
     expect(calls.where((call) => call.method == 'searchUsers'), hasLength(1));
@@ -479,7 +502,7 @@ void main() {
           body: LoadMessage(
             title: '私信加载失败',
             error: PlatformException(code: 'verification', message: '安全验证'),
-            onVerification: () async {
+            onVerification: (url) async {
               verified = true;
               return true;
             },
@@ -491,10 +514,59 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('前往完成拖拽验证'));
+    await tester.tap(find.text('前往官方安全验证'));
     await tester.pumpAndSettle();
     expect(retries, 1);
   });
+  test('manual verification forwards its challenge and keeps the current page epoch', () async {
+    final state = await app();
+    final before = state.epoch;
+    const url = 'https://www.xiaohongshu.com/web-login/captcha?fixture=current';
+    respond = (call) => call.method == 'login'
+        ? {
+            'loggedIn': true,
+            'user': {'user_id': 'u'},
+          }
+        : <String, dynamic>{};
+    await state.login(manualVerification: true, verificationUrl: url);
+    expect(state.epoch, before);
+    expect(
+      calls
+          .singleWhere((call) => call.method == 'login')
+          .arguments['verificationUrl'],
+      url,
+    );
+  });
+
+  testWidgets(
+    'missing challenge hides the verification link and permits explicit retry',
+    (tester) async {
+      var retries = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LoadMessage(
+              title: '评论加载失败',
+              error: PlatformException(
+                code: 'verification',
+                message: '未提供验证入口',
+                details: {'verificationUrl': ''},
+              ),
+              onVerification: (_) async =>
+                  throw StateError('Must not open a generic page'),
+              onRetry: () => retries++,
+            ),
+          ),
+        ),
+      );
+      expect(find.text('前往官方安全验证'), findsNothing);
+      expect(retries, 0);
+      await tester.tap(find.text('重试'));
+      await tester.pump();
+      expect(retries, 1);
+    },
+  );
+
   testWidgets('verification error stays visible without automatic retries', (
     tester,
   ) async {
@@ -958,7 +1030,11 @@ void main() {
         findsOneWidget,
       );
       final route = ModalRoute.of(tester.element(find.byType(GalleryPage)))!;
-      expect(route.reverseTransitionDuration, greaterThan(Duration.zero));
+      expect(route.transitionDuration, const Duration(milliseconds: 330));
+      expect(
+        route.reverseTransitionDuration,
+        const Duration(milliseconds: 200),
+      );
       tester.state<NavigatorState>(find.byType(Navigator)).pop();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));

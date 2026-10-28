@@ -96,7 +96,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> login({bool manualVerification = false}) async {
+  Future<void> login({
+    bool manualVerification = false,
+    String? verificationUrl,
+  }) async {
     if (loginBusy) return;
     loginBusy = true;
     error = null;
@@ -105,8 +108,10 @@ class AppState extends ChangeNotifier {
       final before = textOf(user['user_id']);
       session = await api.call('login', {
         'manualVerification': manualVerification,
+        'verificationUrl': ?verificationUrl,
       });
       if (loggedIn &&
+          (!manualVerification || textOf(user['user_id']) != before) &&
           (textOf(user['user_id']) != before || session['blocked'] == null)) {
         epoch++;
         _noteInteractions.clear();

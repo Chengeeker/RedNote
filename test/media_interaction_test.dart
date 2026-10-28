@@ -264,4 +264,46 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets('liquid glass gallery controls are removed during return', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'liquidGlass': true});
+    final app = AppState(await SharedPreferences.getInstance());
+    final navigatorKey = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => ImageGalleryPage(
+                    app: app,
+                    pics: const [GalleryImage('https://cdn.test/glass.jpg')],
+                    initialIndex: 0,
+                    statusId: 'glass-return',
+                    useLiquidGlass: true,
+                  ),
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.byType(GlassButton), findsNWidgets(2));
+
+    navigatorKey.currentState!.pop();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(find.byType(GlassButton), findsNothing);
+    expect(find.byType(ImageGalleryPage), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(tester.takeException(), isNull);
+  });
 }

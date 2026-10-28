@@ -25,9 +25,9 @@ class PhysicsSpringGalleryRoute<T> extends PageRouteBuilder<T> {
     required this.child,
     super.settings,
     super.opaque = false,
+    super.transitionDuration = const Duration(milliseconds: 220),
   }) : super(
          barrierColor: Colors.black,
-         transitionDuration: const Duration(milliseconds: 220),
          reverseTransitionDuration: const Duration(milliseconds: 200),
          pageBuilder: (context, animation, secondaryAnimation) => child,
          transitionsBuilder: (context, animation, secondaryAnimation, child) {

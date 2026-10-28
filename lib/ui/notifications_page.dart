@@ -198,8 +198,12 @@ class _PrivateChatsSectionState extends State<_PrivateChatsSection> {
         error: failure,
         onRetry: load,
         onLogin: () => signIn(context, widget.app),
-        onVerification: () =>
-            signIn(context, widget.app, manualVerification: true),
+        onVerification: (verificationUrl) => signIn(
+          context,
+          widget.app,
+          manualVerification: true,
+          verificationUrl: verificationUrl,
+        ),
       );
     }
     if (chats.isEmpty) {
@@ -260,8 +264,12 @@ class _PrivateChatsSectionState extends State<_PrivateChatsSection> {
                 error: failure,
                 onRetry: () => load(next: true),
                 onLogin: () => signIn(context, widget.app),
-                onVerification: () =>
-                    signIn(context, widget.app, manualVerification: true),
+                onVerification: (verificationUrl) => signIn(
+                  context,
+                  widget.app,
+                  manualVerification: true,
+                  verificationUrl: verificationUrl,
+                ),
               ),
             );
           }
@@ -402,8 +410,12 @@ class _NotificationListState extends State<_NotificationList>
             error: failure,
             onRetry: load,
             onLogin: () => signIn(context, widget.app),
-            onVerification: () =>
-                signIn(context, widget.app, manualVerification: true),
+            onVerification: (verificationUrl) => signIn(
+              context,
+              widget.app,
+              manualVerification: true,
+              verificationUrl: verificationUrl,
+            ),
           )
         else
           Center(

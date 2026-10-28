@@ -6,6 +6,8 @@ import android.os.Looper
 import android.webkit.CookieManager
 import com.red.note.protocol.RapSigner
 import com.red.note.protocol.WebSigner
+import com.red.note.protocol.LoginCookieSnapshot
+import com.red.note.protocol.VerificationPageUrl
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
@@ -38,6 +40,10 @@ internal class ProtocolRuntime(context: Context) {
     private var storageWarning: String? = null
     private var lastRequest: Map<String, Any?>? = null
     private var blocked: ApiFailure? = null
+    private var blockedPath: String? = null
+    @Volatile private var verificationPage = ""
+
+    fun verificationPageUrl(): String = verificationPage
 
     fun load() {
         if (loaded) return
@@ -77,15 +83,25 @@ internal class ProtocolRuntime(context: Context) {
         )
     }
 
-    fun accept(candidate: JSONObject): Map<String, Any?> {
+    fun accept(candidate: JSONObject, requireCurrentAccount: Boolean = false): Map<String, Any?> {
         load()
-        val user = request(candidate, "/api/sns/web/v2/user/me", false, rap = false, commonMns = true)
+        val user = request(candidate, "/api/sns/web/v2/user/me", false, rap = false, commonMns = true, syncToBrowser = false)
         if (user.optBoolean("guest", true) || user.optString("user_id", user.optString("userid")).isBlank())
             throw ApiFailure("login", "网页登录尚未完成，请扫码后再确认")
+        val previous = active?.optJSONObject("user")
+        if (requireCurrentAccount && previous != null &&
+            previous.optString("user_id", previous.optString("userid")) != user.optString("user_id", user.optString("userid")))
+            throw ApiFailure("login", "验证页面账号与应用账号不一致；请使用原账号完成验证")
+        val apiHost = if (candidate.optString("region") == "rednote") "webapi.rednote.com" else "edith.xiaohongshu.com"
+        val verifiedCookies = candidate.optJSONObject("cookies")?.optString(apiHost).orEmpty()
+        if (LoginCookieSnapshot.select(candidate.getJSONObject("context").getString("a1"), verifiedCookies).isEmpty())
+            throw ApiFailure("login", "登录校验后未取得有效凭据；请在网页完成登录后重试")
         candidate.put("user", user)
         vault.save(candidate)
         active = candidate
         blocked = null
+        blockedPath = null
+        verificationPage = ""
         storageWarning = null
         return status()
     }
@@ -94,6 +110,8 @@ internal class ProtocolRuntime(context: Context) {
         vault.clear()
         active = null
         blocked = null
+        blockedPath = null
+        verificationPage = ""
         storageWarning = null
         lastRequest = null
         GuestSessionManager.ensure(appContext) { s -> guestSession = s }
@@ -123,7 +141,6 @@ internal class ProtocolRuntime(context: Context) {
             }
         }
 
-        blocked?.let { throw it }
         val a = JSONObject(args)
         val formats = JSONArray(listOf("jpg", "webp", "avif"))
         fun required(key: String): String = a.optString(key).also { require(it.isNotBlank() && it.length <= 8192) { "缺少有效的$key" } }
@@ -237,7 +254,7 @@ internal class ProtocolRuntime(context: Context) {
     }
 
     private fun request(session: JSONObject, path: String, post: Boolean, body: JSONObject? = null,
-        query: Map<String, String> = emptyMap(), rap: Boolean = true, search: Boolean = false, commonMns: Boolean = true): JSONObject {
+        query: Map<String, String> = emptyMap(), rap: Boolean = true, search: Boolean = false, commonMns: Boolean = true, syncToBrowser: Boolean = true): JSONObject {
         val abroad = session.optString("region") == "rednote"
         val origin = if (abroad) "https://www.rednote.com" else "https://www.xiaohongshu.com"
         val host = if (abroad) "https://webapi.rednote.com" else if (search) "https://so.xiaohongshu.com" else "https://edith.xiaohongshu.com"
@@ -283,20 +300,34 @@ internal class ProtocolRuntime(context: Context) {
                 lastRequest = mapOf("path" to path, "http" to response.code, "elapsedMs" to (System.nanoTime() - start) / 1000000,
                     "time" to time)
                 val setCookies = response.headers.values("Set-Cookie")
-                if (setCookies.isNotEmpty()) updateCookies(session, url.toString(), setCookies)
+                if (setCookies.isNotEmpty()) updateCookies(session, url.toString(), setCookies, syncToBrowser)
 
                 if (response.code == 406 || response.code == 461 || response.code == 471) {
-                    if (session !== active) {
+                    if (session === guestSession) {
                         // 游客会话过期，清除并重新获取
                         GuestSessionManager.clear(appContext)
                         GuestSessionManager.ensure(appContext) { s -> guestSession = s }
                     }
+                    val verificationUrl = VerificationPageUrl.build(origin, response.code,
+                        response.header("verifyuuid").orEmpty(), response.header("verifytype").orEmpty(),
+                        response.header("x-biz").orEmpty(), response.header("verifymsg").orEmpty())
+                    val verifyType = response.header("verifytype").orEmpty()
                     val failure = ApiFailure(
-                        if (response.code == 406) "signature" else "verification",
-                        if (response.code == 406) "请求签名被拒绝，请重新初始化访问环境" else "接口触发小红书安全验证，请在官方网页完成拖拽验证后重试",
-                        mapOf("http" to response.code, "verifytype" to response.header("verifytype"), "verifyuuid" to response.header("verifyuuid"))
+                        if (response.code == 406 || verifyType == "302") "signature"
+                        else if (verifyType == "301") "login" else "verification",
+                        if (response.code == 406) "请求签名被拒绝，请重新初始化访问环境"
+                        else if (verifyType == "301") "官方要求重新登录后再访问此接口"
+                        else if (verifyType == "302") "官方要求刷新网页访问环境；此响应不是滑块验证入口"
+                        else if (verificationUrl.isEmpty()) "接口触发安全检查（HTTP ${response.code}），未提供可用验证入口；网页可浏览不代表此接口已通过检查"
+                        else "此接口触发官方安全验证，请打开对应验证页面后重试",
+                        mapOf("http" to response.code, "verifytype" to response.header("verifytype"),
+                            "verifyuuid" to response.header("verifyuuid"), "verificationUrl" to verificationUrl)
                     )
-                    if (session === active) blocked = failure
+                    if (session === active || session === guestSession) {
+                        blocked = failure
+                        blockedPath = path
+                        verificationPage = verificationUrl
+                    }
                     throw failure
                 }
                 if (response.code == 401) {
@@ -318,6 +349,11 @@ internal class ProtocolRuntime(context: Context) {
                 val json = try { JSONObject(String(bytes, Charsets.UTF_8)) } catch (_: Exception) { throw ApiFailure("response", "服务器没有返回有效的 JSON") }
                 val code = json.optInt("code", -1)
                 if (!json.optBoolean("success", code == 0)) throw ApiFailure("business", json.optString("msg", "服务暂不可用"), mapOf("businessCode" to code))
+                if ((session === active || session === guestSession) && blockedPath == path) {
+                    blocked = null
+                    blockedPath = null
+                    verificationPage = ""
+                }
                 return json.optJSONObject("data") ?: JSONObject()
             }
         } catch (e: IOException) {
@@ -325,7 +361,7 @@ internal class ProtocolRuntime(context: Context) {
         }
     }
 
-    private fun updateCookies(session: JSONObject, urlText: String, values: List<String>) {
+    private fun updateCookies(session: JSONObject, urlText: String, values: List<String>, syncToBrowser: Boolean) {
         val url = urlText.toHttpUrl()
         val snapshots = session.optJSONObject("cookies") ?: JSONObject().also { session.put("cookies", it) }
         val parsed = values.mapNotNull { Cookie.parse(url, it) }
@@ -344,10 +380,19 @@ internal class ProtocolRuntime(context: Context) {
             }
             snapshots.put(host, map.entries.joinToString("; ") { "${it.key}=${it.value}" })
         }
+        if (session === active) {
+            try { vault.save(session); storageWarning = null }
+            catch (_: Exception) { storageWarning = "会话更新未保存；退出应用后可能需要重新登录" }
+        }
+        // Candidate verification never writes into the live login browser.
+        if (!syncToBrowser) return
         main.post {
+            if (session !== active && session !== guestSession) return@post
             val manager = CookieManager.getInstance()
-            values.forEach { manager.setCookie(urlText, it) }
-            manager.flush()
+            var remaining = values.size
+            values.forEach { manager.setCookie(urlText, it) {
+                if (--remaining == 0) manager.flush()
+            } }
         }
     }
 

@@ -19,6 +19,8 @@ import org.json.JSONObject
 import java.net.URI
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
+import com.red.note.protocol.LoginCookieSnapshot
+import com.red.note.protocol.VerificationPageUrl
 
 class LoginActivity: Activity() {
     private lateinit var web: WebView
@@ -77,7 +79,7 @@ class LoginActivity: Activity() {
         }, LinearLayout.LayoutParams(0, dp(50), 1f))
 
         confirm = Button(this).apply {
-            text = if (manualVerification) "验证完成" else "确认登录"
+            text = if (manualVerification) "返回应用重试" else "确认登录"
             setOnClickListener { verify(true) }
         }
         bar.addView(confirm, LinearLayout.LayoutParams(0, dp(50), 1.5f))
@@ -130,7 +132,7 @@ class LoginActivity: Activity() {
                         pageStart = environment.getLong("t")
                         if (signContext != null && !closed) {
                             status.text = if (manualVerification)
-                                "请在官方网页完成拖拽验证；完成后点“验证完成”，返回应用会自动重试。"
+                                "请完成当前官方安全检查，再点“返回应用重试”；以原请求结果确认是否解除限制。"
                             else "网页登录环境已就绪；登录后会自动验证，也可点确认登录重试。"
                         }
                     } catch (_: Exception) {
@@ -156,7 +158,7 @@ class LoginActivity: Activity() {
                         Log.i("RedNote", "Sign context captured successfully")
                         handler.post {
                             if (!closed) status.text = if (manualVerification)
-                                "请在官方网页完成拖拽验证；完成后点“验证完成”，返回应用会自动重试。"
+                                "请完成当前官方安全检查，再点“返回应用重试”；以原请求结果确认是否解除限制。"
                             else "网页登录环境已就绪；登录后会自动验证，也可点确认登录重试。"
                         }
                     } catch (e: Exception) {
@@ -176,20 +178,33 @@ class LoginActivity: Activity() {
         setContentView(column)
 
         val saved = runtime.active
-        if (saved != null) {
-            val snapshots = saved.optJSONObject("cookies")
-            snapshots?.keys()?.forEach { host ->
-                if (host in allowedHosts) snapshots.optString(host).split(';').forEach { piece ->
-                    if (piece.contains('=')) cookies.setCookie("https://$host/", piece.trim() + "; Path=/; Secure")
-                }
-            }
-            cookies.flush()
-        }
-
         val host = if (saved?.optString("region") == "rednote") "www.rednote.com" else "www.xiaohongshu.com"
-        val initial = "https://$host/${if (manualVerification) "explore" else "login"}"
-        web.loadUrl(initial)
-        handler.postDelayed(poll, 3000)
+        val initial = if (manualVerification) intent.getStringExtra("verification_url").orEmpty()
+            else "https://$host/login"
+        if (manualVerification && !VerificationPageUrl.isTrusted(initial)) {
+            status.text = "没有可用的官方验证入口，请返回应用重试原请求。"
+            confirm.isEnabled = false
+            return
+        }
+        // Earlier versions replayed snapshots as host-only cookies. Remove only duplicate auth entries.
+        val duplicates = allowedHosts.flatMap { cookieHost ->
+            cookies.getCookie("https://$cookieHost/api/sns/web/v1/homefeed").orEmpty().split(';')
+                .map { it.substringBefore('=').trim() }.groupingBy { it }.eachCount()
+                .filter { (name, count) -> count > 1 && name in setOf("a1", "web_session", "webId") }
+                .map { (name, _) -> "https://$cookieHost/" to "$name=; Max-Age=0; Path=/; Secure" }
+        }
+        fun openLogin() {
+            if (closed) return
+            cookies.flush()
+            web.loadUrl(initial)
+            handler.postDelayed(poll, 3000)
+        }
+        if (duplicates.isEmpty()) openLogin() else {
+            var remaining = duplicates.size
+            duplicates.forEach { (url, value) -> cookies.setCookie(url, value) {
+                if (--remaining == 0) openLogin()
+            } }
+        }
     }
 
     private fun verify(manual: Boolean) {
@@ -202,24 +217,25 @@ class LoginActivity: Activity() {
         val hosts = if (region == "rednote") listOf("www.rednote.com", "webapi.rednote.com") else listOf("www.xiaohongshu.com", "edith.xiaohongshu.com", "so.xiaohongshu.com")
         val snapshots = JSONObject()
         hosts.forEach { host -> snapshots.put(host, CookieManager.getInstance().getCookie("https://$host/api/sns/web/v1/homefeed") ?: "") }
-        val raw = snapshots.optString(hosts[1]).ifEmpty { snapshots.optString(hosts[0]) }
-        val cookieMap = raw.split(';').map { it.trim().split('=', limit = 2) }.filter { it.size == 2 }.associate { it[0] to it[1] }
-        if (cookieMap["web_session"].isNullOrBlank() || cookieMap["a1"] != captured.optString("a1")) {
+        val raw = LoginCookieSnapshot.select(captured.optString("a1"), *hosts.map { snapshots.optString(it) }.toTypedArray())
+        if (raw.isEmpty()) {
             if (manual) status.text = "尚未检测到有效登录状态，请先在网页中完成扫码登录。"
             return
         }
-        val cookieFingerprint = fingerprint("$region|$snapshots")
+        val cookieFingerprint = fingerprint("$region|${captured.optString("a1")}|${LoginCookieSnapshot.session(raw)}")
         if (!manual && cookieFingerprint == lastAttemptFingerprint) return
         if (!checking.compareAndSet(false, true)) return
         lastAttemptFingerprint = cookieFingerprint
         confirm.isEnabled = false
         status.text = if (manual) "正在验证登录状态…" else "已检测到登录状态，正在自动验证…"
         val context = JSONObject(captured.toString()).put("width", width).put("height", height).put("pageStart", pageStart)
+        // All API hosts must use the login selected from the current browser, not an old host-only copy.
+        hosts.forEach { snapshots.put(it, raw) }
         val candidate = JSONObject().put("context", context).put("ua", actualUa).put("requestedWith", requestedWith)
             .put("region", region).put("cookies", snapshots)
         runtime.worker.execute {
             try {
-                runtime.accept(candidate)
+                runtime.accept(candidate, requireCurrentAccount = manualVerification)
                 handler.post {
                     if (!closed) {
                         setResult(RESULT_OK)
@@ -229,7 +245,10 @@ class LoginActivity: Activity() {
             } catch (e: Exception) {
                 handler.post {
                     if (!closed) {
-                        status.text = (e as? ApiFailure)?.message ?: "登录校验未通过，请确认是否已扫码成功；原有会话保持不变。"
+                        val failure = e as? ApiFailure
+                        val code = failure?.details?.get("http") ?: failure?.details?.get("businessCode")
+                        status.text = (failure?.message ?: "登录校验未通过；原有会话保持不变。") +
+                            (code?.let { "（状态 $it）" } ?: "")
                         confirm.isEnabled = true
                     }
                 }
