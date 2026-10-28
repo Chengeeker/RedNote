@@ -276,7 +276,7 @@ void main() {
       await tester.tap(find.text('测试笔记'));
       await tester.pumpAndSettle();
       final route = ModalRoute.of(tester.element(find.byType(NotePage)))!;
-      expect(route.transitionDuration, const Duration(milliseconds: 330));
+      expect(route.transitionDuration, const Duration(milliseconds: 220));
       expect(
         route.reverseTransitionDuration,
         const Duration(milliseconds: 200),

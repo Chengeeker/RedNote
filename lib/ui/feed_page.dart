@@ -412,7 +412,6 @@ class NoteTile extends StatelessWidget {
           PhysicsSpringGalleryRoute<void>(
             child: NotePage(app: app, initial: note),
             opaque: true,
-            transitionDuration: const Duration(milliseconds: 330),
           ),
         );
         if (context.mounted && clearFocusOnReturn) {
