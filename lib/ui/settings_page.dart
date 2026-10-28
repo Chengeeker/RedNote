@@ -100,7 +100,7 @@ class SettingsHubPage extends StatelessWidget {
           AppSectionCard(
             child: ReviewPreferenceTile(
               title: '关于 RedNote',
-              subtitle: '版本 0.3.17',
+              subtitle: '版本 0.3.18',
               leading: Icon(
                 Icons.info_outline_rounded,
                 color: scheme.onSurfaceVariant,
@@ -109,7 +109,7 @@ class SettingsHubPage extends StatelessWidget {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   icon: const Icon(Icons.info_outline_rounded),
-                  title: const Text('RedNote 0.3.17'),
+                  title: const Text('RedNote 0.3.18'),
                   content: const SingleChildScrollView(
                     child: Text(
                       '个人使用的小红书第三方客户端，非官方应用。\n\n网页登录由官方页面处理，应用不接收密码。登录过期或需要验证码时，请在官方网页内手动完成。\n\n网页与接口变化可能影响功能。',
