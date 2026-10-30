@@ -8,6 +8,7 @@ import 'common.dart';
 import 'feed_page.dart';
 import 'profile_header.dart';
 import 'settings_page.dart';
+import 'albums_page.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key, required this.app});
@@ -236,6 +237,18 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                 ),
             ],
+          ),
+        if (widget.app.loggedIn && selected == 1)
+          ListTile(
+            leading: const Icon(Icons.folder_outlined),
+            title: const Text('收藏专辑'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => AlbumsPage(app: widget.app),
+              ),
+            ),
           ),
       ],
     );

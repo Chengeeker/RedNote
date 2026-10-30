@@ -392,6 +392,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('全部'), findsOneWidget);
     expect(tester.testTextInput.isVisible, isFalse);
+    for (final entry in {
+      '最多评论': 'comment_descending',
+      '最多收藏': 'collect_descending',
+    }.entries) {
+      await tester.tap(find.byTooltip('排序与类型筛选'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(entry.key));
+      await tester.pumpAndSettle();
+      final searches = calls.where((call) => call.method == 'search');
+      expect(searches.last.arguments['sort'], entry.value);
+      expect(searches.last.arguments['page'], 1);
+      expect(tester.testTextInput.isVisible, isFalse);
+    }
     await tester.tap(find.text('用户'));
     await tester.pumpAndSettle();
     expect(calls.where((call) => call.method == 'searchUsers'), hasLength(1));

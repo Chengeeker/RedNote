@@ -314,6 +314,7 @@ class SearchPageState extends State<SearchPage> {
 
   Future<void> filter() async {
     if (keyword.isEmpty) return;
+    FocusScope.of(context).unfocus(disposition: UnfocusDisposition.scope);
     try {
       await widget.app.api.call('searchFilters', {
         'keyword': keyword,
@@ -332,7 +333,9 @@ class SearchPageState extends State<SearchPage> {
           for (final entry in {
             'general': '综合',
             'time_descending': '最新',
-            'popularity_descending': '最热',
+            'popularity_descending': '最多点赞',
+            'comment_descending': '最多评论',
+            'collect_descending': '最多收藏',
             'type:0': '全部类型',
             'type:1': '视频笔记',
             'type:2': '图文笔记',
@@ -351,6 +354,11 @@ class SearchPageState extends State<SearchPage> {
         sort = choice;
       }
       await submit();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          FocusScope.of(context).unfocus(disposition: UnfocusDisposition.scope);
+        }
+      });
     }
   }
 

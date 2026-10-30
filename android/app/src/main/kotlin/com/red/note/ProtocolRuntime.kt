@@ -158,7 +158,7 @@ internal class ProtocolRuntime(context: Context) {
                 require(keyword.length <= 200) { "搜索词过长" }
                 val sort = a.optString("sort", "general")
                 val noteType = a.optInt("noteType", 0).coerceIn(0, 2)
-                require(sort in setOf("general", "time_descending", "popularity_descending")) { "排序方式无效" }
+                require(sort in setOf("general", "time_descending", "popularity_descending", "comment_descending", "collect_descending")) { "排序方式无效" }
                 val filters = JSONArray()
                 listOf("sort_type" to sort, "filter_note_type" to when(noteType) { 1 -> "视频笔记"; 2 -> "普通笔记"; else -> "不限" },
                     "filter_note_time" to "不限", "filter_note_range" to "不限", "filter_pos_distance" to "不限").forEach { (type, value) ->
@@ -188,6 +188,29 @@ internal class ProtocolRuntime(context: Context) {
                     "image_formats" to "jpg,webp,avif", "xsec_token" to a.optString("token"), "xsec_source" to a.optString("source")),
                     rap = method == "userPosts", commonMns = true)
             }
+            "boards" -> request(session, "/api/sns/web/v1/board/user", false, query = linkedMapOf(
+                "user_id" to session.getJSONObject("user").let { it.optString("user_id", it.optString("userid")) },
+                "num" to "15", "page" to a.optInt("page", 1).coerceIn(1, 1000).toString()), rap = false)
+            "boardNotes" -> request(session, "/api/sns/web/v1/board/note", false, query = linkedMapOf(
+                "board_id" to required("id"), "num" to "30", "cursor" to a.optString("cursor"),
+                "image_formats" to "jpg,webp,avif"), rap = false)
+            "boardInfo" -> {
+                val id = required("id")
+                require(id.matches(Regex("[a-fA-F0-9]{24}"))) { "专辑ID无效" }
+                request(session, "/api/sns/web/v1/board/$id", false, query = linkedMapOf("image_formats" to "jpg,webp,avif"), rap = false)
+            }
+            "saveBoard" -> {
+                val name = required("name").trim()
+                val desc = a.optString("desc")
+                val id = a.optString("id")
+                require(name.isNotEmpty() && name.codePointCount(0, name.length)<=12 && desc.codePointCount(0, desc.length)<=1000) { "专辑名称或简介长度无效" }
+                require(id.isEmpty() || id.matches(Regex("[a-fA-F0-9]{24}"))) { "专辑ID无效" }
+                val body = JSONObject().put("name", name).put("desc", desc).put("privacy", if(a.optBoolean("private")) 1 else 0)
+                if(id.isNotEmpty())body.put("boardid", id)
+                request(session, "/api/sns/web/v1/board", true, body, rap = false, httpMethod = if(id.isEmpty()) "POST" else "PUT")
+            }
+            "deleteBoard" -> request(session, "/api/sns/web/v1/board", false,
+                query = linkedMapOf("board_id" to required("id")), rap = false, httpMethod = "DELETE")
             "profile" -> request(session, "/api/sns/web/v1/user/otherinfo", false, query = linkedMapOf(
                 "target_user_id" to required("id"), "xsec_token" to a.optString("token"), "xsec_source" to a.optString("source", "pc_note")),
                 rap = false, commonMns = true)
@@ -254,7 +277,7 @@ internal class ProtocolRuntime(context: Context) {
     }
 
     private fun request(session: JSONObject, path: String, post: Boolean, body: JSONObject? = null,
-        query: Map<String, String> = emptyMap(), rap: Boolean = true, search: Boolean = false, commonMns: Boolean = true, syncToBrowser: Boolean = true): JSONObject {
+        query: Map<String, String> = emptyMap(), rap: Boolean = true, search: Boolean = false, commonMns: Boolean = true, syncToBrowser: Boolean = true, httpMethod: String? = null): JSONObject {
         val abroad = session.optString("region") == "rednote"
         val origin = if (abroad) "https://www.rednote.com" else "https://www.xiaohongshu.com"
         val host = if (abroad) "https://webapi.rednote.com" else if (search) "https://so.xiaohongshu.com" else "https://edith.xiaohongshu.com"
@@ -292,11 +315,13 @@ internal class ProtocolRuntime(context: Context) {
             .header("Origin", origin).header("Referer", "$origin/").header("Cookie", cookie)
         session.optString("requestedWith").takeIf { it.isNotBlank() }?.let { builder.header("X-Requested-With", it) }
         headers.forEach { (k, v) -> builder.header(k, v) }
-        if (post) builder.post(serialized.toRequestBody("application/json;charset=UTF-8".toMediaType()))
+        if (post) builder.method(httpMethod ?: "POST", serialized.toRequestBody("application/json;charset=UTF-8".toMediaType()))
+        else if (httpMethod == "DELETE") builder.delete()
 
         val start = System.nanoTime()
         try {
-            client.newCall(builder.build()).execute().use { response ->
+            val requestClient = if(httpMethod != null) client.newBuilder().retryOnConnectionFailure(false).build() else client
+            requestClient.newCall(builder.build()).execute().use { response ->
                 lastRequest = mapOf("path" to path, "http" to response.code, "elapsedMs" to (System.nanoTime() - start) / 1000000,
                     "time" to time)
                 val setCookies = response.headers.values("Set-Cookie")
@@ -347,8 +372,8 @@ internal class ProtocolRuntime(context: Context) {
                 }
                 val bytes = buffer.toByteArray()
                 val json = try { JSONObject(String(bytes, Charsets.UTF_8)) } catch (_: Exception) { throw ApiFailure("response", "服务器没有返回有效的 JSON") }
-                val code = json.optInt("code", -1)
-                if (!json.optBoolean("success", code == 0)) throw ApiFailure("business", json.optString("msg", "服务暂不可用"), mapOf("businessCode" to code))
+                val code = json.optInt("code", json.optInt("result", -1))
+                if (!json.optBoolean("success", code == 0) || (path.startsWith("/api/sns/web/v1/board") && code != 0)) throw ApiFailure("business", json.optString("msg", "服务暂不可用"), mapOf("businessCode" to code))
                 if ((session === active || session === guestSession) && blockedPath == path) {
                     blocked = null
                     blockedPath = null

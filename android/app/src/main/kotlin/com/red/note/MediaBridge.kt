@@ -1,5 +1,6 @@
 package com.red.note
 
+import com.red.note.media.MediaImageFormat
 import android.Manifest
 import android.content.ContentValues
 import android.content.pm.ActivityInfo
@@ -106,10 +107,20 @@ internal class MediaBridge(private val activity:MainActivity,engine:FlutterEngin
         conn.setRequestProperty("Referer","https://www.xiaohongshu.com/")
         var pending:android.net.Uri?=null;var legacy:File?=null
         var merged:File?=null
+        var imageInput:java.io.BufferedInputStream?=null
         try {
             require(conn.responseCode in 200..299) {"媒体下载失败，请刷新笔记后重试"}
-            val mime=conn.contentType?.substringBefore(';')?.lowercase() ?: ""
-            val ext=when(mime){"image/jpeg"->"jpg";"image/png"->"png";"image/webp"->"webp";"image/gif"->"gif";"image/avif"->"avif";"video/mp4"->"mp4";"video/webm"->"webm";else->throw IllegalArgumentException("此媒体格式暂不支持保存，可继续在线查看")}
+            val mime=if(video)conn.contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty() else {
+                imageInput=conn.inputStream.buffered()
+                val input=imageInput!!
+                input.mark(64)
+                val header=ByteArray(64)
+                var count=0
+                while(count<header.size) {val n=input.read(header,count,header.size-count);if(n<0)break;count+=n}
+                input.reset()
+                MediaImageFormat.mime(header,count).also {require(it.isNotEmpty()) {"下载内容不是支持的图片，请刷新笔记后重试"}}
+            }
+            val ext=when(mime){"image/jpeg"->"jpg";"image/png"->"png";"image/webp"->"webp";"image/gif"->"gif";"image/avif"->"avif";"image/heic"->"heic";"image/heif"->"heif";"video/mp4"->"mp4";"video/webm"->"webm";else->throw IllegalArgumentException("此媒体格式暂不支持保存，可继续在线查看")}
             require(if(video)mime.startsWith("video/") else mime.startsWith("image/")) {"媒体格式与保存类型不一致"}
             val limit=if(video)512L*1024*1024 else 40L*1024*1024
             require(conn.contentLengthLong<=limit) {"媒体文件过大"}
@@ -128,7 +139,7 @@ internal class MediaBridge(private val activity:MainActivity,engine:FlutterEngin
                 require(dir.path.startsWith(root.path+File.separator)) {"保存路径无效"}
                 check(dir.isDirectory || dir.mkdirs());legacy=File(dir,name);legacy!!.outputStream()
             }
-            output.use {target -> (merged?.inputStream() ?: conn.inputStream).use {input ->
+            output.use {target -> (merged?.inputStream() ?: imageInput ?: conn.inputStream).use {input ->
                 val bytes=ByteArray(65536);var written=0L
                 while(true){val n=input.read(bytes);if(n<0)break;if(Thread.currentThread().isInterrupted)error("cancelled");written+=n;require(written<=limit){"媒体文件过大"};target.write(bytes,0,n)}
                 require(written>0){"媒体内容为空"}
@@ -138,7 +149,7 @@ internal class MediaBridge(private val activity:MainActivity,engine:FlutterEngin
             return relative
         } catch(e:Exception) {
             pending?.let {activity.contentResolver.delete(it,null,null)};legacy?.delete();throw e
-        } finally {merged?.delete();conn.disconnect();connection=null}
+        } finally {try {imageInput?.close()} finally {merged?.delete();conn.disconnect();connection=null}}
     }
     fun close(){connection?.disconnect();worker.shutdownNow();metadataWorker.shutdownNow();channel.setMethodCallHandler(null)}
 }
