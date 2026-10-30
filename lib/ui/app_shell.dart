@@ -76,8 +76,8 @@ class _AppShellState extends State<AppShell>
 
   @override
   Widget build(BuildContext context) {
-    const toolbarHeight = 52.0;
-    const categoryBarHeight = 48.0;
+    const toolbarHeight = 48.0;
+    const categoryBarHeight = 40.0;
     final discoveryTopPadding =
         MediaQuery.paddingOf(context).top + toolbarHeight + categoryBarHeight;
     final pages = [

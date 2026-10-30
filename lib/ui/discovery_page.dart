@@ -98,7 +98,7 @@ class DiscoveryPageState extends State<DiscoveryPage> {
         for (final name in ['穿搭', '美食', '彩妆', '影视', '职场']) {'name': name},
     ];
     return PreferredSize(
-      preferredSize: const Size.fromHeight(48),
+      preferredSize: const Size.fromHeight(40),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -120,6 +120,9 @@ class DiscoveryPageState extends State<DiscoveryPage> {
                   foregroundColor: category == textOf(choice['id'])
                       ? Theme.of(context).colorScheme.onSurface
                       : Theme.of(context).colorScheme.onSurfaceVariant,
+                  minimumSize: const Size(48, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: Text(
                   textOf(choice['name']),
@@ -133,6 +136,11 @@ class DiscoveryPageState extends State<DiscoveryPage> {
             if (failure != null)
               TextButton.icon(
                 onPressed: busy ? null : loadCategories,
+                style: TextButton.styleFrom(
+                  minimumSize: const Size(48, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
                 icon: const Icon(Icons.refresh, size: 16),
                 label: const Text('分类加载失败，重试'),
               ),
