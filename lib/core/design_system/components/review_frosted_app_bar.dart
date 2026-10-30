@@ -1,4 +1,6 @@
 // ignore_for_file: use_null_aware_elements
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -13,6 +15,7 @@ class ReviewFrostedAppBar extends StatelessWidget
     this.actions,
     this.automaticallyImplyActions = true,
     this.flexibleSpace,
+    this.frosted = false,
     this.bottom,
     this.showBottomBorder = true,
     this.elevation,
@@ -47,6 +50,7 @@ class ReviewFrostedAppBar extends StatelessWidget
   final List<Widget>? actions;
   final bool automaticallyImplyActions;
   final Widget? flexibleSpace;
+  final bool frosted;
   final PreferredSizeWidget? bottom;
   final bool showBottomBorder;
   final double? elevation;
@@ -92,22 +96,55 @@ class ReviewFrostedAppBar extends StatelessWidget
       title: title,
       actions: actions,
       automaticallyImplyActions: automaticallyImplyActions,
-      flexibleSpace: DecoratedBox(
-        decoration: BoxDecoration(
-          color: baseColor,
-          border: showBottomBorder
-              ? Border(
-                  bottom: BorderSide(
-                    color: theme.colorScheme.outlineVariant.withValues(
-                      alpha: 0.24,
+      flexibleSpace: frosted
+          ? ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            baseColor.withValues(alpha: 0.95),
+                            baseColor.withValues(alpha: 0),
+                          ],
+                        ),
+                        border: showBottomBorder
+                            ? Border(
+                                bottom: BorderSide(
+                                  color: theme.colorScheme.outlineVariant
+                                      .withValues(alpha: 0.24),
+                                  width: 0.5,
+                                ),
+                              )
+                            : null,
+                      ),
                     ),
-                    width: 0.5,
-                  ),
-                )
-              : null,
-        ),
-        child: flexibleSpace,
-      ),
+                    if (flexibleSpace != null) flexibleSpace!,
+                  ],
+                ),
+              ),
+            )
+          : DecoratedBox(
+              decoration: BoxDecoration(
+                color: baseColor,
+                border: showBottomBorder
+                    ? Border(
+                        bottom: BorderSide(
+                          color: theme.colorScheme.outlineVariant.withValues(
+                            alpha: 0.24,
+                          ),
+                          width: 0.5,
+                        ),
+                      )
+                    : null,
+              ),
+              child: flexibleSpace,
+            ),
       bottom: bottom,
       forceMaterialTransparency: false,
       elevation: elevation ?? 0,
@@ -115,7 +152,7 @@ class ReviewFrostedAppBar extends StatelessWidget
       notificationPredicate: notificationPredicate,
       shadowColor: shadowColor,
       shape: shape,
-      backgroundColor: baseColor,
+      backgroundColor: frosted ? baseColor.withValues(alpha: 0.45) : baseColor,
       surfaceTintColor: Colors.transparent,
       foregroundColor: foregroundColor,
       iconTheme: iconTheme,

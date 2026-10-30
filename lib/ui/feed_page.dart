@@ -27,6 +27,7 @@ class FeedPage extends StatefulWidget {
     this.header,
     this.showViewCount = false,
     this.viewCounts = const {},
+    this.topPadding = 0,
   });
   final AppState app;
   final String method;
@@ -35,6 +36,7 @@ class FeedPage extends StatefulWidget {
   final Widget? header;
   final bool showViewCount;
   final Json viewCounts;
+  final double topPadding;
   @override
   State<FeedPage> createState() => FeedPageState();
 }
@@ -269,6 +271,8 @@ class FeedPageState extends State<FeedPage> {
       return CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          if (widget.topPadding > 0)
+            SliverToBoxAdapter(child: SizedBox(height: widget.topPadding)),
           if (widget.header != null) SliverToBoxAdapter(child: widget.header),
           SliverFillRemaining(hasScrollBody: false, child: message),
         ],
@@ -292,6 +296,10 @@ class FeedPageState extends State<FeedPage> {
               controller: scroll,
               physics: const AlwaysScrollableScrollPhysics(),
               slivers: [
+                if (widget.topPadding > 0)
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: widget.topPadding),
+                  ),
                 if (widget.header != null)
                   SliverToBoxAdapter(child: widget.header),
                 SliverPadding(

@@ -7,8 +7,15 @@ import '../data/red_api.dart';
 import 'feed_page.dart';
 
 class DiscoveryPage extends StatefulWidget {
-  const DiscoveryPage({super.key, required this.app});
+  const DiscoveryPage({
+    super.key,
+    required this.app,
+    this.topPadding = 0,
+    this.onChromeChanged,
+  });
   final AppState app;
+  final double topPadding;
+  final VoidCallback? onChromeChanged;
 
   @override
   State<DiscoveryPage> createState() => DiscoveryPageState();
@@ -38,6 +45,9 @@ class DiscoveryPageState extends State<DiscoveryPage> {
     } on FormatException {
       categories = [];
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onChromeChanged?.call();
+    });
     loadCategories();
   }
 
@@ -65,7 +75,10 @@ class DiscoveryPageState extends State<DiscoveryPage> {
     } catch (error) {
       if (mounted) setState(() => failure = error);
     } finally {
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() => busy = false);
+        widget.onChromeChanged?.call();
+      }
     }
   }
 
@@ -75,8 +88,7 @@ class DiscoveryPageState extends State<DiscoveryPage> {
     if (failure != null) await loadCategories();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  PreferredSizeWidget buildCategoryBar(BuildContext context) {
     final choices = <Json>[
       {'id': 'homefeed_recommend', 'name': '推荐'},
       ...categories.where(
@@ -85,56 +97,67 @@ class DiscoveryPageState extends State<DiscoveryPage> {
       if (categories.isEmpty)
         for (final name in ['穿搭', '美食', '彩妆', '影视', '职场']) {'name': name},
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(
-            children: [
-              for (final choice in choices)
-                TextButton(
-                  onPressed: textOf(choice['id']).isEmpty
-                      ? null
-                      : () {
-                          setState(() => category = textOf(choice['id']));
-                          widget.app.preferences.setString(
-                            'discoveryCategory:${textOf(widget.app.user["user_id"])}',
-                            category,
-                          );
-                        },
-                  style: TextButton.styleFrom(
-                    foregroundColor: category == textOf(choice['id'])
-                        ? Theme.of(context).colorScheme.onSurface
-                        : Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  child: Text(
-                    textOf(choice['name']),
-                    style: TextStyle(
-                      fontWeight: category == textOf(choice['id'])
-                          ? FontWeight.w700
-                          : FontWeight.normal,
-                    ),
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(48),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            for (final choice in choices)
+              TextButton(
+                onPressed: textOf(choice['id']).isEmpty
+                    ? null
+                    : () {
+                        setState(() => category = textOf(choice['id']));
+                        widget.onChromeChanged?.call();
+                        widget.app.preferences.setString(
+                          'discoveryCategory:${textOf(widget.app.user["user_id"])}',
+                          category,
+                        );
+                      },
+                style: TextButton.styleFrom(
+                  foregroundColor: category == textOf(choice['id'])
+                      ? Theme.of(context).colorScheme.onSurface
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+                child: Text(
+                  textOf(choice['name']),
+                  style: TextStyle(
+                    fontWeight: category == textOf(choice['id'])
+                        ? FontWeight.w700
+                        : FontWeight.normal,
                   ),
                 ),
-              if (failure != null)
-                TextButton.icon(
-                  onPressed: busy ? null : loadCategories,
-                  icon: const Icon(Icons.refresh, size: 16),
-                  label: const Text('分类加载失败，重试'),
-                ),
-            ],
-          ),
+              ),
+            if (failure != null)
+              TextButton.icon(
+                onPressed: busy ? null : loadCategories,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('分类加载失败，重试'),
+              ),
+          ],
         ),
-        Expanded(
-          child: FeedPage(
-            key: feed,
-            app: widget.app,
-            args: {'category': category},
-          ),
-        ),
-      ],
+      ),
     );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final feedPage = FeedPage(
+      key: feed,
+      app: widget.app,
+      args: {'category': category},
+      topPadding: widget.onChromeChanged == null ? 0 : widget.topPadding,
+    );
+    return widget.onChromeChanged == null
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              buildCategoryBar(context),
+              Expanded(child: feedPage),
+            ],
+          )
+        : feedPage;
   }
 }

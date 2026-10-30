@@ -76,8 +76,19 @@ class _AppShellState extends State<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    const toolbarHeight = 52.0;
+    const categoryBarHeight = 48.0;
+    final discoveryTopPadding =
+        MediaQuery.paddingOf(context).top + toolbarHeight + categoryBarHeight;
     final pages = [
-      DiscoveryPage(key: feed, app: widget.app),
+      DiscoveryPage(
+        key: feed,
+        app: widget.app,
+        topPadding: discoveryTopPadding,
+        onChromeChanged: () {
+          if (mounted) setState(() {});
+        },
+      ),
       NotificationsPage(
         key: ValueKey('messages:${widget.app.epoch}'),
         app: widget.app,
@@ -91,9 +102,19 @@ class _AppShellState extends State<AppShell>
     final glass = widget.app.liquidGlass && widget.app.floating;
     final scaffold = Scaffold(
       extendBody: widget.app.floating,
+      extendBodyBehindAppBar: selected == 0,
       appBar: selected == 1 || selected == 2 || selected == 3
           ? null
           : ReviewFrostedAppBar(
+              toolbarHeight: toolbarHeight,
+              frosted: selected == 0,
+              bottom: selected == 0
+                  ? feed.currentState?.buildCategoryBar(context) ??
+                        const PreferredSize(
+                          preferredSize: Size.fromHeight(categoryBarHeight),
+                          child: SizedBox.expand(),
+                        )
+                  : null,
               title: Text(selected == 0 ? '发现' : '搜索'),
               centerTitle: selected == 0,
               leading: selected == 3
