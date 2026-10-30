@@ -45,6 +45,7 @@ class _NotePageState extends State<NotePage> {
   bool mutating = false, followingBusy = false, followed = false;
   int imageIndex = 0;
   final imagePages = PageController();
+  final commentsScroll = ScrollController();
   ui.Image? _openingCoverPreview;
   int _previewIndex = 0;
   String cursor = '';
@@ -52,6 +53,7 @@ class _NotePageState extends State<NotePage> {
   void initState() {
     super.initState();
     note = widget.initial;
+    commentsScroll.addListener(_loadMoreCommentsNearEnd);
     load();
   }
 
@@ -59,6 +61,7 @@ class _NotePageState extends State<NotePage> {
   void dispose() {
     _openingCoverPreview?.dispose();
     imagePages.dispose();
+    commentsScroll.dispose();
     super.dispose();
   }
 
@@ -206,6 +209,19 @@ class _NotePageState extends State<NotePage> {
         commentBusy = false;
       });
     }
+  }
+
+  void _loadMoreCommentsNearEnd() {
+    if (!commentsScroll.hasClients ||
+        commentsScroll.position.extentAfter >= 360 ||
+        loading ||
+        failure != null ||
+        commentFailure != null ||
+        commentBusy ||
+        !more) {
+      return;
+    }
+    loadComments();
   }
 
   Future<void> toggleNote(String method) async {
@@ -529,6 +545,7 @@ class _NotePageState extends State<NotePage> {
         enabled: useGlass,
         child: SelectionArea(
           child: ListView(
+            controller: commentsScroll,
             padding: EdgeInsets.only(
               bottom:
                   capsuleHeight + 48 + MediaQuery.viewPaddingOf(context).bottom,
@@ -878,17 +895,11 @@ class _NotePageState extends State<NotePage> {
                     verificationUrl: verificationUrl,
                   ),
                 )
-              else if (!loading && failure == null && !commentBusy)
+              else if (!loading && failure == null && !commentBusy && !more)
                 Center(
-                  child: TextButton(
-                    onPressed: more ? loadComments : null,
-                    child: Text(
-                      more
-                          ? '加载更多评论'
-                          : comments.isEmpty
-                          ? '暂无评论'
-                          : '评论已全部加载',
-                    ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(comments.isEmpty ? '暂无评论' : '评论已全部加载'),
                   ),
                 ),
             ],
@@ -1390,13 +1401,21 @@ class RepliesPage extends StatefulWidget {
 class _RepliesPageState extends State<RepliesPage> {
   final replies = <Json>[];
   final seen = <String>{};
+  final scroll = ScrollController();
   String cursor = '';
   bool busy = false, more = true;
   Object? failure;
   @override
   void initState() {
     super.initState();
+    scroll.addListener(_loadMoreNearEnd);
     load();
+  }
+
+  @override
+  void dispose() {
+    scroll.dispose();
+    super.dispose();
   }
 
   Future<void> load() async {
@@ -1433,10 +1452,23 @@ class _RepliesPageState extends State<RepliesPage> {
     }
   }
 
+  void _loadMoreNearEnd() {
+    if (!scroll.hasClients ||
+        scroll.position.extentAfter >= 360 ||
+        failure != null ||
+        busy ||
+        !more) {
+      return;
+    }
+    load();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: ReviewFrostedAppBar(title: const Text('回复')),
     body: ListView(
+      controller: scroll,
+      physics: const AlwaysScrollableScrollPhysics(),
       children: [
         for (final reply in replies)
           CommentTile(
@@ -1465,11 +1497,11 @@ class _RepliesPageState extends State<RepliesPage> {
               verificationUrl: verificationUrl,
             ),
           )
-        else
+        else if (!more)
           Center(
-            child: TextButton(
-              onPressed: more ? load : null,
-              child: Text(more ? '加载更多' : '回复已全部加载'),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(replies.isEmpty ? '暂无回复' : '回复已全部加载'),
             ),
           ),
       ],
