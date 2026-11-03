@@ -386,7 +386,7 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
     final isLightMode = theme.brightness == Brightness.light;
     final indicatorColor = isLightMode
         ? const Color(0x26000000)
-        : const Color(0x66000000);
+        : const Color(0x26FFFFFF);
     const interactionGlowColor = Color(0x20FFFFFF);
     final glassSettings = ReviewNavigationBar.liquidGlassSettingsFor(
       context,
@@ -396,9 +396,7 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
             )
           : null,
     );
-    final selectedContentColor = isLightMode
-        ? colorScheme.primary
-        : Colors.white;
+    final selectedContentColor = colorScheme.primary;
     final unselectedContentColor = isLightMode
         ? colorScheme.onSurfaceVariant
         : Colors.white;
@@ -471,10 +469,8 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
                     indicatorSettings: LiquidGlassSettings(
                       glassColor: isLightMode
                           ? const Color(0x18000000)
-                          : const Color(0x00FFFFFF),
-                      bodyMode: isLightMode
-                          ? GlassBodyMode.clear
-                          : GlassBodyMode.adaptive,
+                          : const Color(0x26FFFFFF),
+                      bodyMode: GlassBodyMode.clear,
                       refractiveIndex: 1.18,
                       chromaticAberration: 0.025,
                       rimShade: isLightMode ? 0.12 : 0,

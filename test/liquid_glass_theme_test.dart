@@ -56,12 +56,13 @@ void main() {
         expect(bar.settings?.glassColor, const Color(0x66000000));
         expect(bar.settings?.rimLight, 0);
         expect(bar.settings?.shadowElevation, 0);
-        expect(bar.indicatorSettings?.glassColor, const Color(0x00FFFFFF));
-        expect(bar.indicatorSettings?.bodyMode, GlassBodyMode.adaptive);
+        expect(bar.indicatorSettings?.glassColor, const Color(0x26FFFFFF));
+        expect(bar.indicatorSettings?.bodyMode, GlassBodyMode.clear);
         expect(bar.indicatorSettings?.rimShade, 0);
         expect(bar.indicatorSettings?.rimLight, 0);
-        expect(bar.indicatorColor, const Color(0x66000000));
-        expect(bar.selectedIconColor, Colors.white);
+        expect(bar.indicatorColor, const Color(0x26FFFFFF));
+        expect(bar.selectedIconColor, theme.colorScheme.primary);
+        expect(bar.selectedLabelColor, theme.colorScheme.primary);
         expect(bar.unselectedIconColor, Colors.white);
         expect(
           find.byKey(const ValueKey('liquid-glass-light-rim')),

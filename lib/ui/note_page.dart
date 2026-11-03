@@ -617,7 +617,7 @@ class _NotePageState extends State<NotePage> {
                               ],
                             );
                             final thumbnail = ImageGalleryHeroThumbnail(
-                              scope: note.reference.id,
+                              scope: widget.initial,
                               index: index,
                               pic: pics[index],
                               child: Material(
@@ -634,7 +634,7 @@ class _NotePageState extends State<NotePage> {
                                         pics: pics,
                                         author: note.author,
                                         initial: index,
-                                        scope: note.reference.id,
+                                        scope: widget.initial,
                                         onPageChanged: _syncGalleryImage,
                                       ),
                                     ),
@@ -739,7 +739,7 @@ class _NotePageState extends State<NotePage> {
                     if (note.title.isNotEmpty)
                       Hero(
                         createRectTween: directImageRectTween,
-                        tag: 'note-title:${widget.initial.reference.id}',
+                        tag: ('note-title', widget.initial),
                         flightShuttleBuilder: noteTitleFlightShuttle,
                         child: Material(
                           type: MaterialType.transparency,

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../app_state.dart';
 import '../data/red_api.dart';
 import 'common.dart';
+import 'topic_search_page.dart';
 
 class UserProfileHeader extends StatelessWidget {
   const UserProfileHeader({
@@ -11,6 +13,9 @@ class UserProfileHeader extends StatelessWidget {
     required this.user,
     required this.profile,
     this.actions = const [],
+    this.leading,
+    this.footer,
+    this.showAccountDetails = false,
     this.topInset = false,
     this.busy = false,
     this.failure,
@@ -20,6 +25,9 @@ class UserProfileHeader extends StatelessWidget {
   final Json user;
   final Json profile;
   final List<Widget> actions;
+  final Widget? leading;
+  final Widget? footer;
+  final bool showAccountDetails;
   final bool topInset;
   final bool busy;
   final Object? failure;
@@ -32,7 +40,7 @@ class UserProfileHeader extends StatelessWidget {
       ...user,
       ...objectOf(profile['basic_info'] ?? profile['basicInfo']),
     };
-    final background = profileBackgroundUrl(profile);
+    final background = profileBackgroundUrl({...user, ...profile});
     final foreground = background.isEmpty
         ? theme.colorScheme.onSurface
         : Colors.white;
@@ -44,6 +52,8 @@ class UserProfileHeader extends StatelessWidget {
     final redId = textOf(basic['red_id'] ?? basic['redId']);
     final name = textOf(basic['nickname'] ?? basic['nick_name']);
     final description = textOf(basic['desc'] ?? basic['description']);
+    final location = textOf(basic['ip_location'])
+        .replaceFirst(RegExp(r'^IP(?:属地)?\s*[:：]\s*'), '');
     return Stack(
       children: [
         if (background.isNotEmpty) ...[
@@ -71,12 +81,11 @@ class UserProfileHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (actions.isNotEmpty)
+                if (leading != null || actions.isNotEmpty)
                   IconTheme(
                     data: IconThemeData(color: foreground),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: actions,
+                      children: [?leading, const Spacer(), ...actions],
                     ),
                   ),
                 const SizedBox(height: 12),
@@ -101,11 +110,45 @@ class UserProfileHeader extends StatelessWidget {
                           if (redId.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: 6),
-                              child: SelectableText(
-                                '小红书号：$redId',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: secondary,
-                                ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: SelectableText(
+                                      '小红书号：$redId',
+                                      style: theme.textTheme.bodySmall
+                                          ?.copyWith(color: secondary),
+                                    ),
+                                  ),
+                                  if (showAccountDetails)
+                                    IconButton(
+                                      tooltip: '复制小红书号',
+                                      onPressed: () async {
+                                        await Clipboard.setData(
+                                          ClipboardData(text: redId),
+                                        );
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text('已复制小红书号'),
+                                                ),
+                                              );
+                                        }
+                                      },
+                                      icon: Icon(
+                                        Icons.copy_outlined,
+                                        size: 16,
+                                        color: secondary,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          if (showAccountDetails && location.isNotEmpty)
+                            Text(
+                              'IP：$location',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: secondary,
                               ),
                             ),
                         ],
@@ -150,11 +193,16 @@ class UserProfileHeader extends StatelessWidget {
                 if (description.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 18),
-                    child: SelectableText(
-                      description,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: foreground,
-                        height: 1.4,
+                    child: SelectionArea(
+                      child: XhsRichText(
+                        description,
+                        api: app,
+                        onTopicTap: (topic) =>
+                            openTopicSearch(context, app, topic),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: foreground,
+                          height: 1.4,
+                        ),
                       ),
                     ),
                   ),
@@ -189,6 +237,11 @@ class UserProfileHeader extends StatelessWidget {
                             ),
                       ],
                     ),
+                  ),
+                if (footer != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: footer,
                   ),
                 if (busy)
                   const Padding(

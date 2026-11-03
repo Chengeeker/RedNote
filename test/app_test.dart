@@ -209,7 +209,7 @@ void main() {
     expect(
       hero.tag,
       ImageGalleryHeroTag.forPic(
-        scope: 'n',
+        scope: note,
         index: 0,
         pic: const GalleryImage(cover),
       ),
@@ -272,7 +272,9 @@ void main() {
       );
       final coverTag = sourceCover.tag;
       expect(sourceCover.flightShuttleBuilder, isNotNull);
-      const titleTag = 'note-title:n';
+      final titleTag = sourceHeroes
+          .firstWhere((hero) => hero.tag is! ImageGalleryHeroTag)
+          .tag;
       await tester.tap(find.text('测试笔记'));
       await tester.pumpAndSettle();
       final route = ModalRoute.of(tester.element(find.byType(NotePage)))!;

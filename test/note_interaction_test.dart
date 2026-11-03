@@ -120,7 +120,12 @@ void main() {
   testWidgets('card avatar and author open profile without opening note', (
     tester,
   ) async {
-    final state = AppState(await SharedPreferences.getInstance());
+    tester.view.physicalSize = const Size(390, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final state = AppState(await SharedPreferences.getInstance())
+      ..session = {'loggedIn': true};
     final calls = <MethodCall>[];
     final authorNote = Note({
       ...note.raw,
@@ -134,6 +139,13 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(RedApi.channel, (call) async {
           calls.add(call);
+          if (call.method == 'userPosts') {
+            return {
+              'notes': [
+                {'id': 'n', 'xsec_token': 'token', 'note_card': authorNote.raw},
+              ],
+            };
+          }
           return {};
         });
     await tester.pumpWidget(
@@ -160,6 +172,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ProfilePage), findsOneWidget);
       expect(find.byType(NotePage), findsNothing);
+      final profileTile = tester.widget<NoteTile>(find.byType(NoteTile));
+      expect(identical(profileTile.note, authorNote), isFalse);
+      final sourceTitleTag = ('note-title', authorNote);
+      final targetTitleTag = ('note-title', profileTile.note);
+      expect(sourceTitleTag, isNot(targetTitleTag));
+      expect(
+        tester
+            .widgetList<Hero>(find.byType(Hero))
+            .any((hero) => hero.tag == targetTitleTag),
+        isTrue,
+      );
       expect(calls.lastWhere((call) => call.method == 'profile').arguments, {
         'id': 'author-id',
         'token': 'author-token',
@@ -172,6 +195,24 @@ void main() {
         isEmpty,
       );
       Navigator.of(tester.element(find.byType(ProfilePage))).pop();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      final sourceTitle = find.byWidgetPredicate(
+        (widget) => widget is Hero && widget.tag == sourceTitleTag,
+        skipOffstage: false,
+      );
+      expect(sourceTitle, findsOneWidget);
+      expect(
+        find.descendant(
+          of: sourceTitle,
+          matching: find.byWidgetPredicate(
+            (widget) => widget is Offstage && widget.offstage,
+            skipOffstage: false,
+          ),
+          skipOffstage: false,
+        ),
+        findsNothing,
+      );
       await tester.pumpAndSettle();
     }
     expect(calls.where((call) => call.method == 'profile'), hasLength(2));

@@ -249,9 +249,17 @@ class FeedPageState extends State<FeedPage> {
   @override
   Widget build(BuildContext context) {
     if (!widget.app.loggedIn && !_supportsGuest) {
-      return LoadMessage(
-        title: '登录后，发现感兴趣的内容',
-        onLogin: () => signIn(context, widget.app),
+      return CustomScrollView(
+        slivers: [
+          if (widget.header != null) SliverToBoxAdapter(child: widget.header),
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: LoadMessage(
+              title: '登录后，发现感兴趣的内容',
+              onLogin: () => signIn(context, widget.app),
+            ),
+          ),
+        ],
       );
     }
     if (notes.isEmpty) {
@@ -436,8 +444,9 @@ class NoteTile extends StatelessWidget {
 
   Widget _buildTile(BuildContext context) {
     final interaction = app.noteInteraction(note);
+    // Match only this card and its detail, not the same note in another list.
     final coverTag = ImageGalleryHeroTag.forPic(
-      scope: note.reference.id,
+      scope: note,
       index: 0,
       pic: GalleryImage(note.coverUrl),
     );
@@ -540,7 +549,7 @@ class NoteTile extends StatelessWidget {
               children: [
                 Hero(
                   createRectTween: directImageRectTween,
-                  tag: 'note-title:${note.reference.id}',
+                  tag: ('note-title', note),
                   flightShuttleBuilder: noteTitleFlightShuttle,
                   child: Material(
                     type: MaterialType.transparency,
