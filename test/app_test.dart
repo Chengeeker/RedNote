@@ -1036,6 +1036,104 @@ void main() {
     expect(find.text('已同步 1 条笔记的浏览量'), findsNothing);
   });
 
+  for (final (profileFirst, profileFails) in [
+    (true, false),
+    (false, false),
+    (true, true),
+  ]) {
+    testWidgets(
+      'parallel refresh shares one progress state: profileFirst=$profileFirst fails=$profileFails',
+      (tester) async {
+        final state = await app();
+        respond = (call) => switch (call.method) {
+          'selfInfo' => {'user_id': 'u'},
+          'profile' => {
+            'basic_info': {'nickname': '原资料', 'user_id': 'u'},
+          },
+          'userPosts' => {
+            'notes': [
+              {'id': 'n', 'title': '自己的笔记', 'xsec_token': 't'},
+            ],
+            'has_more': false,
+          },
+          _ => {},
+        };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: AccountPage(app: state)),
+          ),
+        );
+        await tester.pumpAndSettle();
+        calls.clear();
+        final self = Completer<Json>();
+        final views = Completer<Json>();
+        respond = (call) => switch (call.method) {
+          'selfInfo' => self.future,
+          'profile' => {
+            'basic_info': {'nickname': '新资料', 'user_id': 'u'},
+          },
+          'syncCreatorStats' => views.future,
+          _ => {},
+        };
+        final refreshButton = find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == '刷新个人资料',
+        );
+        await tester.tap(find.byTooltip('刷新个人资料'));
+        await tester.pump();
+        expect(calls.where((c) => c.method == 'selfInfo'), hasLength(1));
+        // Metrics must start even while the profile's first request is pending.
+        expect(
+          calls.where((c) => c.method == 'syncCreatorStats'),
+          hasLength(1),
+        );
+        expect(find.text('原资料'), findsOneWidget);
+        expect(find.byType(LinearProgressIndicator), findsOneWidget);
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+        void completeProfile() {
+          if (profileFails) {
+            self.completeError(
+              PlatformException(code: 'network', message: '资料接口失败'),
+            );
+          } else {
+            self.complete({'user_id': 'u'});
+          }
+        }
+
+        if (profileFirst) {
+          completeProfile();
+        } else {
+          views.complete({'n': 99});
+        }
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(find.byType(LinearProgressIndicator), findsOneWidget);
+        expect(tester.widget<IconButton>(refreshButton).onPressed, isNull);
+        expect(find.byType(SnackBar), findsNothing);
+        await tester.tap(find.byTooltip('刷新个人资料'));
+        expect(
+          calls.where((c) => c.method == 'syncCreatorStats'),
+          hasLength(1),
+        );
+        if (profileFirst) {
+          views.complete({'n': 99});
+        } else {
+          completeProfile();
+        }
+        await tester.pumpAndSettle();
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        expect(tester.widget<IconButton>(refreshButton).onPressed, isNotNull);
+        expect(find.byType(SnackBar), findsOneWidget);
+        expect(find.text('已同步 1 条笔记的浏览量'), findsOneWidget);
+        expect(state.preferences.getString('viewCounts:u'), '{"n":"99"}');
+        expect(find.text(profileFails ? '原资料' : '新资料'), findsOneWidget);
+        if (profileFails) {
+          expect(find.text('资料加载失败：资料接口失败'), findsOneWidget);
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('profile refresh syncs own views from other profile tabs', (
     tester,
   ) async {

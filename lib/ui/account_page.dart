@@ -45,8 +45,8 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  Future<void> syncViews() async {
-    if (syncing) return;
+  Future<String?> syncViews() async {
+    if (syncing) return null;
     final accountId = userId;
     final epoch = widget.app.epoch;
     bool currentAccount() =>
@@ -86,20 +86,16 @@ class _AccountPageState extends State<AccountPage> {
           );
         }
       }
-      if (!currentAccount()) return;
+      if (!currentAccount()) return null;
       if (ids.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(const SnackBar(content: Text('没有可同步浏览量的笔记')));
-        }
-        return;
+        return '没有可同步浏览量的笔记';
       }
       final data = await widget.app.api.call('syncCreatorStats', {
         'ids': ids.toList(),
       });
-      if (!currentAccount()) return;
+      if (!currentAccount()) return null;
       final received = validatedViewCounts(data, ids);
-      if (received.isEmpty) return;
+      if (received.isEmpty) return null;
       final next = {...viewCounts, ...received};
       if (!await widget.app.preferences.setString(
         'viewCounts:$accountId',
@@ -109,15 +105,14 @@ class _AccountPageState extends State<AccountPage> {
       }
       if (mounted && currentAccount()) {
         setState(() => viewCounts = next);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已同步 ${received.length} 条笔记的浏览量')),
-        );
+        return '已同步 ${received.length} 条笔记的浏览量';
       }
     } catch (e) {
-      if (mounted && currentAccount()) showFailure(context, e);
+      if (currentAccount()) return errorText(e);
     } finally {
       if (mounted) setState(() => syncing = false);
     }
+    return null;
   }
 
   Future<void> load() async {
@@ -134,7 +129,7 @@ class _AccountPageState extends State<AccountPage> {
             widget.app.user['user_id'] ??
             widget.app.user['userid'],
       );
-      if (mounted) setState(() => profile = self);
+      if (mounted && profile.isEmpty) setState(() => profile = self);
       if (uid.isEmpty) {
         throw StateError('服务器未返回用户 ID');
       }
@@ -162,9 +157,20 @@ class _AccountPageState extends State<AccountPage> {
 
   Future<void> refreshProfile() async {
     if (busy || syncing) return;
-    await load();
-    if (!mounted || failure != null) return;
-    await syncViews();
+    final accountId = userId;
+    final epoch = widget.app.epoch;
+    final results = await Future.wait([load().then((_) => null), syncViews()]);
+    if (!mounted ||
+        !widget.app.loggedIn ||
+        widget.app.epoch != epoch ||
+        userId != accountId) {
+      return;
+    }
+    final message = results[1];
+    if (message != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   @override
@@ -181,7 +187,7 @@ class _AccountPageState extends State<AccountPage> {
           user: {...user, ...profile},
           profile: profile,
           topInset: true,
-          busy: busy,
+          busy: busy || syncing,
           failure: failure,
           onRetry: refreshProfile,
           actions: [
@@ -189,12 +195,7 @@ class _AccountPageState extends State<AccountPage> {
               IconButton(
                 tooltip: '刷新个人资料',
                 onPressed: busy || syncing ? null : refreshProfile,
-                icon: syncing
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh),
               ),
             IconButton(
               tooltip: '设置',
