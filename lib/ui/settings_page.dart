@@ -74,7 +74,6 @@ class SettingsHubPage extends StatelessWidget {
                   Icons.folder_open_outlined,
                   StorageSettingsPage(app: app),
                 ),
-                const Divider(height: 1, indent: 56),
                 link(
                   '缓存管理',
                   Icons.cleaning_services_outlined,
@@ -268,10 +267,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       groupValue: app.themeMode,
                       onSelected: () => save('theme', mode.index),
                     ),
-                    if (mode != ThemeMode.dark)
-                      const Divider(height: 1, indent: 72),
                   ],
-                  const Divider(height: 1, indent: 16, endIndent: 16),
                   toggle(
                     '纯黑深色模式',
                     'pureBlack',
@@ -308,7 +304,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       summary: '从 Android 12+ 壁纸自动提取主色调',
                     ),
                     if (!app.dynamicColor) ...[
-                      const Divider(height: 1, indent: 16, endIndent: 16),
                       Padding(
                         padding: const EdgeInsets.only(
                           left: 16,
@@ -395,7 +390,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     trailing: const Icon(Icons.chevron_right_rounded),
                     onTap: chooseWeight,
                   ),
-                  const Divider(height: 1, indent: 16, endIndent: 16),
                   Container(
                     margin: const EdgeInsets.fromLTRB(16, 12, 16, 14),
                     padding: const EdgeInsets.all(12),
@@ -627,7 +621,6 @@ class StorageSettingsPage extends StatelessWidget {
             child: Column(
               children: [
                 for (final video in [false, true]) ...[
-                  if (video) const Divider(height: 1, indent: 56),
                   ListTile(
                     leading: Icon(
                       video ? Icons.videocam_outlined : Icons.image_outlined,
