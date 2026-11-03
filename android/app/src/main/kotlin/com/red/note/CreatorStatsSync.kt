@@ -159,8 +159,12 @@ internal class CreatorStatsSync(
         if (closed) return
         closed = true
         main.removeCallbacks(timeout)
-        client.dispatcher.cancelAll()
-        client.connectionPool.evictAll()
+        client.dispatcher.executorService.execute {
+            check(Looper.myLooper() != Looper.getMainLooper())
+            // Closing a TLS socket can write close_notify, so cleanup is network I/O.
+            client.dispatcher.cancelAll()
+            client.connectionPool.evictAll()
+        }
         try { web?.apply { stopLoading(); destroy() } } catch (_: RuntimeException) { /* Renderer may already be gone. */ }
         web = null
         onComplete(counts, error)
