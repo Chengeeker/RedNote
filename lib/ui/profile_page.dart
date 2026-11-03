@@ -137,37 +137,53 @@ class _ProfilePageState extends State<ProfilePage> {
         : Row(
             children: [
               Expanded(
-                child: FilledButton.icon(
+                child: FilledButton(
                   key: const ValueKey('profile-follow'),
                   onPressed: busy || followingBusy || isFollowing
                       ? null
                       : follow,
-                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
-                  icon: followingBusy
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: followingBusy
                       ? const SizedBox.square(
                           dimension: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : Icon(
-                          isFollowing ? Icons.check : Icons.person_add_outlined,
+                      : Text(
+                          isFollowing
+                              ? (relationship == 'both' ? '互相关注' : '已关注')
+                              : (relationship == 'fans' ? '回关' : '关注'),
                         ),
-                  label: Text(
-                    isFollowing
-                        ? (relationship == 'both' ? '互相关注' : '已关注')
-                        : (relationship == 'fans' ? '回关' : '关注'),
-                  ),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: OutlinedButton.icon(
+                child: FilledButton.tonal(
                   key: const ValueKey('profile-message'),
                   onPressed: chatBusy ? null : openChat,
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 48),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 40),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    backgroundColor: Theme.of(context)
+                        .colorScheme
+                        .surfaceContainerHighest,
+                    foregroundColor: Theme.of(context).colorScheme.onSurface,
                   ),
-                  icon: const Icon(Icons.chat_bubble_outline_rounded),
-                  label: const Text('发私信'),
+                  child: const Text('发私信'),
                 ),
               ),
             ],
@@ -176,10 +192,12 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
+    backgroundColor: Theme.of(context).colorScheme.surface,
     body: FeedPage(
       app: widget.app,
       method: 'userPosts',
       source: 'pc_user',
+      profileLayout: true,
       header: ColoredBox(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
         child: Column(
@@ -188,12 +206,15 @@ class _ProfilePageState extends State<ProfilePage> {
             Material(
               color: Theme.of(context).colorScheme.surface,
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(24),
+                top: Radius.circular(12),
               ),
               child: SizedBox(
                 width: double.infinity,
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                   child: Text(
                     '笔记',
                     style: Theme.of(context).tabBarTheme.labelStyle,

@@ -9,6 +9,8 @@ import 'package:rednote/app_state.dart';
 import 'package:rednote/core/theme/app_theme.dart';
 import 'package:rednote/data/red_api.dart';
 import 'package:rednote/ui/profile_page.dart';
+import 'package:rednote/ui/feed_page.dart';
+import 'package:rednote/core/design_system/components/review_card.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +43,7 @@ void main() {
     WidgetTester tester,
     AppState app, {
     bool dark = false,
+    double textScale = 1.5,
     Json user = const {'user_id': 'author', 'nickname': '作者'},
   }) async {
     tester.view.physicalSize = const Size(360, 1000);
@@ -53,7 +56,7 @@ void main() {
           theme: dark ? AppTheme.darkTheme() : AppTheme.lightTheme(),
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context)
-                .copyWith(textScaler: const TextScaler.linear(1.5)),
+                .copyWith(textScaler: TextScaler.linear(textScale)),
             child: child!,
           ),
           home: ProfilePage(app: app, user: user),
@@ -82,7 +85,7 @@ void main() {
           });
       await mount(tester, app, dark: dark);
       expect(find.text('作者的完整昵称'), findsOneWidget);
-      expect(find.text('小红书号：26246404808'), findsOneWidget);
+      expect(find.textContaining('小红书号：26246404808'), findsOneWidget);
       expect(find.text('IP：河南'), findsOneWidget);
       expect(find.text('浙江杭州'), findsOneWidget);
       expect(find.byTooltip('复制小红书号'), findsOneWidget);
@@ -118,6 +121,70 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets(
+    'compact author header aligns identity and keeps copy next to account',
+    (tester) async {
+      final app = AppState(await SharedPreferences.getInstance())
+        ..session = {
+          'loggedIn': true,
+          'user': {'user_id': 'viewer'},
+        };
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            RedApi.channel,
+            (call) async => switch (call.method) {
+              'profile' => profile,
+              'userPosts' => {
+                'notes': [
+                  {
+                    'id': 'profile-post',
+                    'xsec_token': 'token',
+                    'note_card': {
+                      'display_title': '带日期的笔记',
+                      'time': 1791504000000,
+                    },
+                  },
+                ],
+              },
+              _ => {},
+            },
+          );
+      await mount(tester, app, textScale: 1);
+      final avatar = tester.getRect(
+        find.byKey(const ValueKey('profile-avatar')),
+      );
+      final name = tester.getRect(find.byKey(const ValueKey('profile-name')));
+      final metadata = tester.getRect(
+        find.byKey(const ValueKey('profile-metadata')),
+      );
+      expect(avatar.height, 80);
+      expect(name.top, closeTo(avatar.top, 0.1));
+      expect(metadata.height, 48);
+      expect(metadata.bottom, lessThanOrEqualTo(avatar.bottom));
+      expect(tester.widget<NoteTile>(find.byType(NoteTile)).compact, isTrue);
+      expect(tester.widget<ReviewCard>(find.byType(ReviewCard)).elevation, 0);
+      expect(find.text(notificationTime(1791504000000)), findsOneWidget);
+      expect(
+        find.ancestor(
+          of: find.byIcon(Icons.copy_outlined),
+          matching: find.byType(RichText),
+        ),
+        findsOneWidget,
+      );
+      final shape =
+          tester
+                  .widget<FilledButton>(
+                    find.byKey(const ValueKey('profile-follow')),
+                  )
+                  .style!
+                  .shape!
+                  .resolve({})
+              as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(12));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final followed in [false, true]) {
     testWidgets('server followed=$followed overrides stale list relationship', (

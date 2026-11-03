@@ -19,6 +19,7 @@ void main() {
       final theme = brightness == Brightness.light
           ? AppTheme.lightTheme()
           : AppTheme.darkTheme();
+      final selections = <int>[];
       await tester.pumpWidget(
         ProviderScope(
           overrides: [appStateProvider.overrideWith((ref) => app)],
@@ -28,13 +29,46 @@ void main() {
               bottomNavigationBar: ReviewNavigationBar(
                 selectedIndex: 0,
                 hasBottomInset: false,
-                onSelected: (_) {},
+                onSelected: selections.add,
               ),
             ),
           ),
         ),
       );
+      final startup = tester.widget<AnimatedOpacity>(
+        find.byKey(const ValueKey('navigation-startup-shell')),
+      );
+      expect(startup.opacity, 1);
+      expect(
+        tester.widget<GlassTabBar>(find.byType(GlassTabBar)).backgroundQuality,
+        GlassQuality.minimal,
+      );
+      final shell = startup.child as DecoratedBox;
+      expect(
+        (shell.decoration as BoxDecoration).color,
+        theme.colorScheme.surfaceContainerHigh,
+      );
+      expect(
+        (shell.decoration as BoxDecoration).borderRadius,
+        BorderRadius.circular(9999),
+      );
+      await tester.tap(find.text('消息').first);
+      await tester.pump();
+      expect(selections, contains(1));
       await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<AnimatedOpacity>(
+              find.byKey(const ValueKey('navigation-startup-shell')),
+            )
+            .opacity,
+        0,
+      );
+      expect(
+        tester.widget<GlassTabBar>(find.byType(GlassTabBar)).backgroundQuality,
+        GlassQuality.premium,
+      );
 
       final bar = tester.widget<GlassTabBar>(find.byType(GlassTabBar));
       if (brightness == Brightness.light) {
@@ -67,6 +101,18 @@ void main() {
         expect(
           find.byKey(const ValueKey('liquid-glass-light-rim')),
           findsNothing,
+        );
+        final rim =
+            tester
+                    .widget<DecoratedBox>(
+                      find.byKey(const ValueKey('liquid-glass-dark-rim')),
+                    )
+                    .decoration
+                as BoxDecoration;
+        expect(rim.color, Colors.white.withValues(alpha: 0.025));
+        expect(
+          (rim.border as Border).top.color,
+          Colors.white.withValues(alpha: 0.12),
         );
       }
       expect(tester.takeException(), isNull);

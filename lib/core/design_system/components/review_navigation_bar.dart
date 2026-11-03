@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/gestures.dart'
     show
@@ -95,6 +96,27 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
   bool _cancelled = false;
   bool _isJellyDragging = false;
   int _gestureId = 0;
+  Future<void>? _glassPreparation;
+  bool _glassReady = false;
+
+  void _prepareGlass() {
+    _glassPreparation ??=
+        LiquidGlassWidgets.initialize(
+          enablePerformanceMonitor: false,
+          warmUpMode: ImageFilter.isShaderFilterSupported
+              ? GlassWarmUpMode.auto
+              : GlassWarmUpMode.never,
+        ).then(
+          (_) {
+            if (mounted) setState(() => _glassReady = true);
+          },
+          onError: (Object error) {
+            debugPrint(
+              'Navigation glass preparation failed: ${error.runtimeType}',
+            );
+          },
+        );
+  }
 
   void _scheduleGlassReset(int gestureId) {
     _glassResetTimer?.cancel();
@@ -381,6 +403,7 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
   }
 
   Widget _buildLiquidGlassBar(BuildContext context) {
+    _prepareGlass();
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isLightMode = theme.brightness == Brightness.light;
@@ -418,6 +441,30 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
           child: Stack(
             alignment: Alignment.center,
             children: [
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: AnimatedOpacity(
+                    key: const ValueKey('navigation-startup-shell'),
+                    opacity: _glassReady ? 0 : 1,
+                    duration: Duration(
+                      milliseconds: MediaQuery.disableAnimationsOf(context)
+                          ? 0
+                          : 180,
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHigh,
+                        borderRadius: BorderRadius.circular(9999),
+                        border: Border.all(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.4,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               Listener(
                 behavior: HitTestBehavior.translucent,
                 onPointerDown: _onPointerDown,
@@ -464,8 +511,12 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
                     verticalPadding: 0,
                     // GlassTabBar's own preset overrides GlassTheme settings.
                     settings: glassSettings,
-                    quality: ReviewNavigationBar.liquidGlassQuality,
-                    backgroundQuality: ReviewNavigationBar.liquidGlassQuality,
+                    quality: _glassReady
+                        ? ReviewNavigationBar.liquidGlassQuality
+                        : GlassQuality.minimal,
+                    backgroundQuality: _glassReady
+                        ? ReviewNavigationBar.liquidGlassQuality
+                        : GlassQuality.minimal,
                     indicatorSettings: LiquidGlassSettings(
                       glassColor: isLightMode
                           ? const Color(0x18000000)
@@ -494,21 +545,29 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
                   ),
                 ),
               ),
-              if (isLightMode)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      key: const ValueKey('liquid-glass-light-rim'),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(9999),
-                        border: Border.all(
-                          color: const Color(0xF5FFFFFF),
-                          width: 1,
-                        ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    key: ValueKey(
+                      isLightMode
+                          ? 'liquid-glass-light-rim'
+                          : 'liquid-glass-dark-rim',
+                    ),
+                    decoration: BoxDecoration(
+                      color: isLightMode
+                          ? null
+                          : Colors.white.withValues(alpha: 0.025),
+                      borderRadius: BorderRadius.circular(9999),
+                      border: Border.all(
+                        color: isLightMode
+                            ? const Color(0xF5FFFFFF)
+                            : Colors.white.withValues(alpha: 0.12),
+                        width: isLightMode ? 1 : 0.7,
                       ),
                     ),
                   ),
                 ),
+              ),
               // The library's extraButton only supports a left or right slot.
               Positioned.fill(
                 child: Padding(

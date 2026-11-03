@@ -29,6 +29,7 @@ class FeedPage extends StatefulWidget {
     this.showViewCount = false,
     this.viewCounts = const {},
     this.topPadding = 0,
+    this.profileLayout = false,
   });
   final AppState app;
   final String method;
@@ -38,6 +39,7 @@ class FeedPage extends StatefulWidget {
   final bool showViewCount;
   final Json viewCounts;
   final double topPadding;
+  final bool profileLayout;
   @override
   State<FeedPage> createState() => FeedPageState();
 }
@@ -312,12 +314,12 @@ class FeedPageState extends State<FeedPage> {
                 if (widget.header != null)
                   SliverToBoxAdapter(child: widget.header),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                  padding: EdgeInsets.all(widget.profileLayout ? 4 : 8),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: columns,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
+                      mainAxisSpacing: widget.profileLayout ? 4 : 8,
+                      crossAxisSpacing: widget.profileLayout ? 4 : 8,
                       mainAxisExtent:
                           (constraints.maxWidth / columns) * 1.35 +
                           (MediaQuery.textScalerOf(context).scale(13) * 4),
@@ -330,6 +332,7 @@ class FeedPageState extends State<FeedPage> {
                         viewCount: widget.viewCounts[notes[index].reference.id]
                             ?.toString(),
                         clearFocusOnReturn: widget.method == 'search',
+                        compact: widget.profileLayout,
                       ),
                       childCount: notes.length,
                     ),
@@ -385,12 +388,14 @@ class NoteTile extends StatelessWidget {
     this.showViewCount = false,
     this.viewCount,
     this.clearFocusOnReturn = false,
+    this.compact = false,
   });
   final Note note;
   final AppState app;
   final bool showViewCount;
   final String? viewCount;
   final bool clearFocusOnReturn;
+  final bool compact;
 
   Future<void> _openPage(BuildContext context, Route<void> route) async {
     if (clearFocusOnReturn) {
@@ -444,6 +449,7 @@ class NoteTile extends StatelessWidget {
 
   Widget _buildTile(BuildContext context) {
     final interaction = app.noteInteraction(note);
+    final date = compact ? notificationTime(note.raw['time']) : '';
     // Match only this card and its detail, not the same note in another list.
     final coverTag = ImageGalleryHeroTag.forPic(
       scope: note,
@@ -452,8 +458,11 @@ class NoteTile extends StatelessWidget {
     );
     return ReviewCard(
       margin: EdgeInsets.zero,
+      elevation: compact ? 0 : 1,
       clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(compact ? 8 : 20),
+      ),
       onTap: () => _openPage(
         context,
         PhysicsSpringGalleryRoute<void>(
@@ -543,7 +552,9 @@ class NoteTile extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
+            padding: compact
+                ? const EdgeInsets.all(8)
+                : const EdgeInsets.fromLTRB(10, 9, 10, 10),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -575,17 +586,34 @@ class NoteTile extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                         onTap: () => _openAuthor(context),
                         child: SizedBox(
-                          height: 32,
+                          height: date.isEmpty ? 32 : 40,
                           child: Row(
                             children: [
                               UserAvatar(note.avatar, size: 22, api: app),
                               const SizedBox(width: 5),
                               Expanded(
-                                child: Text(
-                                  note.author,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      note.author,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                    if (date.isNotEmpty)
+                                      Text(
+                                        date,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
                                 ),
                               ),
                             ],

@@ -77,7 +77,12 @@ class UserProfileHeader extends StatelessWidget {
           top: topInset,
           bottom: false,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              showAccountDetails ? 0 : 8,
+              16,
+              showAccountDetails ? 12 : 24,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -90,9 +95,16 @@ class UserProfileHeader extends StatelessWidget {
                   ),
                 const SizedBox(height: 12),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
+                  crossAxisAlignment: showAccountDetails
+                      ? CrossAxisAlignment.start
+                      : CrossAxisAlignment.center,
                   children: [
-                    UserAvatar(userImageUrl(basic), size: 64, api: app),
+                    UserAvatar(
+                      userImageUrl(basic),
+                      key: const ValueKey('profile-avatar'),
+                      size: showAccountDetails ? 80 : 64,
+                      api: app,
+                    ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
@@ -102,49 +114,103 @@ class UserProfileHeader extends StatelessWidget {
                             name.isEmpty
                                 ? (app.loggedIn ? '我的主页' : '欢迎使用 RedNote')
                                 : name,
+                            key: const ValueKey('profile-name'),
                             style: theme.textTheme.titleMedium?.copyWith(
                               color: foreground,
                               fontSize: 20,
+                              height: 1.2,
                             ),
                           ),
                           if (redId.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.only(top: 6),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: SelectableText(
+                              padding: EdgeInsets.only(
+                                top: showAccountDetails ? 4 : 6,
+                              ),
+                              child: showAccountDetails
+                                  ? Tooltip(
+                                      message: '复制小红书号',
+                                      child: InkWell(
+                                        key: const ValueKey('profile-metadata'),
+                                        borderRadius: BorderRadius.circular(8),
+                                        onTap: () async {
+                                          await Clipboard.setData(
+                                            ClipboardData(text: redId),
+                                          );
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('已复制小红书号'),
+                                                  ),
+                                                );
+                                          }
+                                        },
+                                        child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                            minHeight: 48,
+                                          ),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text.rich(
+                                                TextSpan(
+                                                  text: '小红书号：$redId',
+                                                  children: [
+                                                    WidgetSpan(
+                                                      alignment:
+                                                          PlaceholderAlignment
+                                                              .middle,
+                                                      child: Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              left: 6,
+                                                            ),
+                                                        child: Icon(
+                                                          Icons.copy_outlined,
+                                                          size: 14,
+                                                          color: secondary,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: secondary,
+                                                      height: 1.35,
+                                                    ),
+                                              ),
+                                              if (location.isNotEmpty) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'IP：$location',
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: secondary,
+                                                        height: 1.35,
+                                                      ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : SelectableText(
                                       '小红书号：$redId',
                                       style: theme.textTheme.bodySmall
                                           ?.copyWith(color: secondary),
                                     ),
-                                  ),
-                                  if (showAccountDetails)
-                                    IconButton(
-                                      tooltip: '复制小红书号',
-                                      onPressed: () async {
-                                        await Clipboard.setData(
-                                          ClipboardData(text: redId),
-                                        );
-                                        if (context.mounted) {
-                                          ScaffoldMessenger.of(context)
-                                              .showSnackBar(
-                                                const SnackBar(
-                                                  content: Text('已复制小红书号'),
-                                                ),
-                                              );
-                                        }
-                                      },
-                                      icon: Icon(
-                                        Icons.copy_outlined,
-                                        size: 16,
-                                        color: secondary,
-                                      ),
-                                    ),
-                                ],
-                              ),
                             ),
-                          if (showAccountDetails && location.isNotEmpty)
+                          if (showAccountDetails &&
+                              redId.isEmpty &&
+                              location.isNotEmpty)
                             Text(
                               'IP：$location',
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -158,6 +224,7 @@ class UserProfileHeader extends StatelessWidget {
                 ),
                 if (stats.isNotEmpty)
                   Padding(
+                    key: const ValueKey('profile-stats'),
                     padding: const EdgeInsets.only(top: 24),
                     child: Wrap(
                       spacing: 20,
@@ -192,6 +259,7 @@ class UserProfileHeader extends StatelessWidget {
                   ),
                 if (description.isNotEmpty)
                   Padding(
+                    key: const ValueKey('profile-description'),
                     padding: const EdgeInsets.only(top: 18),
                     child: SelectionArea(
                       child: XhsRichText(
@@ -240,7 +308,7 @@ class UserProfileHeader extends StatelessWidget {
                   ),
                 if (footer != null)
                   Padding(
-                    padding: const EdgeInsets.only(top: 16),
+                    padding: EdgeInsets.only(top: showAccountDetails ? 10 : 16),
                     child: footer,
                   ),
                 if (busy)
