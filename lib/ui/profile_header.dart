@@ -83,7 +83,7 @@ class UserProfileHeader extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    UserAvatar(userImageUrl(basic), size: 84, api: app),
+                    UserAvatar(userImageUrl(basic), size: 64, api: app),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
@@ -93,9 +93,9 @@ class UserProfileHeader extends StatelessWidget {
                             name.isEmpty
                                 ? (app.loggedIn ? '我的主页' : '欢迎使用 RedNote')
                                 : name,
-                            style: theme.textTheme.headlineSmall?.copyWith(
+                            style: theme.textTheme.titleMedium?.copyWith(
                               color: foreground,
-                              fontWeight: FontWeight.w700,
+                              fontSize: 20,
                             ),
                           ),
                           if (redId.isNotEmpty)
@@ -140,7 +140,7 @@ class UserProfileHeader extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              style: theme.textTheme.bodyLarge?.copyWith(
+                              style: theme.textTheme.bodyMedium?.copyWith(
                                 color: foreground,
                               ),
                             ),
@@ -152,7 +152,7 @@ class UserProfileHeader extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 18),
                     child: SelectableText(
                       description,
-                      style: theme.textTheme.bodyLarge?.copyWith(
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         color: foreground,
                         height: 1.4,
                       ),

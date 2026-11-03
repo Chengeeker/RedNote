@@ -112,7 +112,7 @@ class _AppShellState extends State<AppShell>
                   ? feed.currentState?.buildCategoryBar(context) ??
                         const PreferredSize(
                           preferredSize: Size.fromHeight(categoryBarHeight),
-                          child: SizedBox.expand(),
+                          child: SizedBox(height: categoryBarHeight),
                         )
                   : null,
               title: Text(selected == 0 ? '发现' : '搜索'),

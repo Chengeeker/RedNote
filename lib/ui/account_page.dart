@@ -221,17 +221,19 @@ class _AccountPageState extends State<AccountPage> {
                       ),
                       child: Text(
                         const ['笔记', '收藏', '赞过'][index],
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              fontWeight: selected == index
-                                  ? FontWeight.w700
-                                  : FontWeight.normal,
-                              color: selected == index
-                                  ? Theme.of(context).colorScheme.onSurface
-                                  : Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                            ),
+                        style:
+                            (selected == index
+                                    ? Theme.of(context).tabBarTheme.labelStyle
+                                    : Theme.of(context)
+                                          .tabBarTheme
+                                          .unselectedLabelStyle)
+                                ?.copyWith(
+                                  color: selected == index
+                                      ? Theme.of(context).colorScheme.onSurface
+                                      : Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                ),
                       ),
                     ),
                   ),
