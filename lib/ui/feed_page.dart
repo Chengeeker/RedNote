@@ -15,6 +15,7 @@ import '../features/media/image_gallery_page.dart'
         imageGalleryHeroFlightShuttleBuilder;
 import 'common.dart';
 import 'note_page.dart';
+import 'profile_page.dart';
 import 'note_title_hero.dart';
 
 class FeedPage extends StatefulWidget {
@@ -382,6 +383,38 @@ class NoteTile extends StatelessWidget {
   final bool showViewCount;
   final String? viewCount;
   final bool clearFocusOnReturn;
+
+  Future<void> _openPage(BuildContext context, Route<void> route) async {
+    if (clearFocusOnReturn) {
+      FocusScope.of(context).unfocus(disposition: UnfocusDisposition.scope);
+    }
+    await Navigator.of(context).push(route);
+    if (context.mounted && clearFocusOnReturn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          FocusScope.of(context).unfocus(disposition: UnfocusDisposition.scope);
+        }
+      });
+    }
+  }
+
+  void _openAuthor(BuildContext context) {
+    if (note.userId.isEmpty) return;
+    final user = note.user;
+    final source = textOf(user['xsec_source']);
+    _openPage(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => ProfilePage(
+          app: app,
+          user: {...user, 'user_id': note.userId},
+          token: textOf(user['xsec_token']),
+          source: source.isEmpty ? note.reference.source : source,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: app,
@@ -412,25 +445,13 @@ class NoteTile extends StatelessWidget {
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      onTap: () async {
-        if (clearFocusOnReturn) {
-          FocusScope.of(context).unfocus(disposition: UnfocusDisposition.scope);
-        }
-        await Navigator.of(context).push(
-          PhysicsSpringGalleryRoute<void>(
-            child: NotePage(app: app, initial: note),
-            opaque: true,
-          ),
-        );
-        if (context.mounted && clearFocusOnReturn) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (context.mounted) {
-              FocusScope.of(context)
-                  .unfocus(disposition: UnfocusDisposition.scope);
-            }
-          });
-        }
-      },
+      onTap: () => _openPage(
+        context,
+        PhysicsSpringGalleryRoute<void>(
+          child: NotePage(app: app, initial: note),
+          opaque: true,
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -539,57 +560,61 @@ class NoteTile extends StatelessWidget {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    UserAvatar(note.avatar, size: 22, api: app),
-                    const SizedBox(width: 5),
                     Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              note.author,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                          ),
-                          Tooltip(
-                            message: interaction['liked'] == true
-                                ? '取消点赞'
-                                : '点赞笔记',
-                            child: InkWell(
-                              key: ValueKey('note-like:${note.reference.id}'),
-                              borderRadius: BorderRadius.circular(16),
-                              onTap: () => _toggleLike(context),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                  vertical: 8,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      interaction['liked'] == true
-                                          ? Icons.favorite
-                                          : Icons.favorite_border,
-                                      size: 16,
-                                      color: interaction['liked'] == true
-                                          ? const Color(0xFFFF2442)
-                                          : null,
-                                    ),
-                                    const SizedBox(width: 3),
-                                    Text(
-                                      textOf(interaction['liked_count'] ?? '0'),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall,
-                                    ),
-                                  ],
+                      child: InkWell(
+                        key: ValueKey('note-author:${note.reference.id}'),
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => _openAuthor(context),
+                        child: SizedBox(
+                          height: 32,
+                          child: Row(
+                            children: [
+                              UserAvatar(note.avatar, size: 22, api: app),
+                              const SizedBox(width: 5),
+                              Expanded(
+                                child: Text(
+                                  note.author,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall,
                                 ),
                               ),
-                            ),
+                            ],
                           ),
-                        ],
+                        ),
+                      ),
+                    ),
+                    Tooltip(
+                      message: interaction['liked'] == true ? '取消点赞' : '点赞笔记',
+                      child: InkWell(
+                        key: ValueKey('note-like:${note.reference.id}'),
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => _toggleLike(context),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                interaction['liked'] == true
+                                    ? Icons.favorite
+                                    : Icons.favorite_border,
+                                size: 16,
+                                color: interaction['liked'] == true
+                                    ? const Color(0xFFFF2442)
+                                    : null,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                textOf(interaction['liked_count'] ?? '0'),
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],

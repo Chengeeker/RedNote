@@ -10,6 +10,8 @@ import 'package:rednote/data/red_api.dart';
 import 'package:rednote/ui/feed_page.dart';
 import 'package:rednote/ui/note_page.dart';
 import 'package:rednote/ui/discovery_page.dart';
+import 'package:rednote/ui/profile_page.dart';
+import 'package:rednote/ui/common.dart' show UserAvatar;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -114,6 +116,66 @@ void main() {
       expect(likes, 2);
     },
   );
+
+  testWidgets('card avatar and author open profile without opening note', (
+    tester,
+  ) async {
+    final state = AppState(await SharedPreferences.getInstance());
+    final calls = <MethodCall>[];
+    final authorNote = Note({
+      ...note.raw,
+      'user': {
+        'userid': 'author-id',
+        'nickname': '卡片作者',
+        'xsec_token': 'author-token',
+        'xsec_source': 'pc_feed',
+      },
+    }, note.reference);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(RedApi.channel, (call) async {
+          calls.add(call);
+          return {};
+        });
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 220,
+              height: 400,
+              child: NoteTile(note: authorNote, app: state),
+            ),
+          ),
+        ),
+      ),
+    );
+    for (final avatar in [true, false]) {
+      final author = find.byKey(const ValueKey('note-author:n'));
+      await tester.tap(
+        find.descendant(
+          of: author,
+          matching: avatar ? find.byType(UserAvatar) : find.text('卡片作者'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ProfilePage), findsOneWidget);
+      expect(find.byType(NotePage), findsNothing);
+      expect(calls.lastWhere((call) => call.method == 'profile').arguments, {
+        'id': 'author-id',
+        'token': 'author-token',
+        'source': 'pc_feed',
+      });
+      expect(
+        calls.where(
+          (call) => call.method == 'detail' || call.method == 'comments',
+        ),
+        isEmpty,
+      );
+      Navigator.of(tester.element(find.byType(ProfilePage))).pop();
+      await tester.pumpAndSettle();
+    }
+    expect(calls.where((call) => call.method == 'profile'), hasLength(2));
+  });
 
   testWidgets(
     'discovery renders category row while content loads and reuses real cached categories',
