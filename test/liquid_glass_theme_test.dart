@@ -82,13 +82,10 @@ void main() {
         expect(bar.indicatorColor, const Color(0x26000000));
         expect(bar.selectedIconColor, theme.colorScheme.primary);
         expect(bar.unselectedIconColor, theme.colorScheme.onSurfaceVariant);
-        expect(
-          find.byKey(const ValueKey('liquid-glass-light-rim')),
-          findsOneWidget,
-        );
       } else {
         expect(bar.settings?.glassColor, const Color(0x66000000));
-        expect(bar.settings?.rimLight, 0);
+        expect(bar.settings?.rimLight, 0.12);
+        expect(ReviewNavigationBar.liquidGlassSettings.rimLight, 0);
         expect(bar.settings?.shadowElevation, 0);
         expect(bar.indicatorSettings?.glassColor, const Color(0x26FFFFFF));
         expect(bar.indicatorSettings?.bodyMode, GlassBodyMode.clear);
@@ -98,23 +95,34 @@ void main() {
         expect(bar.selectedIconColor, theme.colorScheme.primary);
         expect(bar.selectedLabelColor, theme.colorScheme.primary);
         expect(bar.unselectedIconColor, Colors.white);
+      }
+      final shellFinder = find.byKey(
+        const ValueKey('navigation-startup-shell'),
+      );
+      final navigation = find.byType(ReviewNavigationBar);
+      void expectNoFixedRim() {
+        int decorations(Finder parent) => find
+            .descendant(of: parent, matching: find.byType(DecoratedBox))
+            .evaluate()
+            .length;
         expect(
-          find.byKey(const ValueKey('liquid-glass-light-rim')),
-          findsNothing,
-        );
-        final rim =
-            tester
-                    .widget<DecoratedBox>(
-                      find.byKey(const ValueKey('liquid-glass-dark-rim')),
-                    )
-                    .decoration
-                as BoxDecoration;
-        expect(rim.color, Colors.white.withValues(alpha: 0.025));
-        expect(
-          (rim.border as Border).top.color,
-          Colors.white.withValues(alpha: 0.12),
+          decorations(navigation),
+          decorations(find.byType(GlassTabBar)) + decorations(shellFinder),
         );
       }
+
+      expectNoFixedRim();
+      final hold = await tester.startGesture(
+        tester.getCenter(find.text('消息').first),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      final pressed = tester.widget<GlassTabBar>(find.byType(GlassTabBar));
+      expect(pressed.indicatorPinchStrength, 0.7);
+      expect(pressed.pressScale, 1.06);
+      expectNoFixedRim();
+      await hold.up();
+      await tester.pumpAndSettle();
+      expectNoFixedRim();
       expect(tester.takeException(), isNull);
     });
   }

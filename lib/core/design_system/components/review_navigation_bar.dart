@@ -417,7 +417,7 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
           ? ReviewNavigationBar.liquidGlassSettings.copyWith(
               shadowElevation: 0.55,
             )
-          : null,
+          : ReviewNavigationBar.liquidGlassSettings.copyWith(rimLight: 0.12),
     );
     final selectedContentColor = colorScheme.primary;
     final unselectedContentColor = isLightMode
@@ -542,29 +542,6 @@ class _ReviewNavigationBarState extends ConsumerState<ReviewNavigationBar> {
                     selectedLabelColor: selectedContentColor,
                     unselectedIconColor: unselectedContentColor,
                     unselectedLabelColor: unselectedContentColor,
-                  ),
-                ),
-              ),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    key: ValueKey(
-                      isLightMode
-                          ? 'liquid-glass-light-rim'
-                          : 'liquid-glass-dark-rim',
-                    ),
-                    decoration: BoxDecoration(
-                      color: isLightMode
-                          ? null
-                          : Colors.white.withValues(alpha: 0.025),
-                      borderRadius: BorderRadius.circular(9999),
-                      border: Border.all(
-                        color: isLightMode
-                            ? const Color(0xF5FFFFFF)
-                            : Colors.white.withValues(alpha: 0.12),
-                        width: isLightMode ? 1 : 0.7,
-                      ),
-                    ),
                   ),
                 ),
               ),
