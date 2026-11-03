@@ -15,10 +15,13 @@ import '../core/utils/app_dialog.dart';
 import 'common.dart';
 import 'cache_page.dart';
 
-Widget _sectionTitle(BuildContext context, String title) => Text(
-  title,
-  style: Theme.of(context).textTheme.titleSmall
-      ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+Widget _sectionTitle(BuildContext context, String title) => Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 16),
+  child: Text(
+    title,
+    style: Theme.of(context).textTheme.titleSmall
+        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+  ),
 );
 
 Widget _cardTitle(BuildContext context, String title) => Padding(
@@ -99,7 +102,7 @@ class SettingsHubPage extends StatelessWidget {
           AppSectionCard(
             child: ReviewPreferenceTile(
               title: '关于 RedNote',
-              subtitle: '版本 1.0.0',
+              subtitle: '版本 1.0.1',
               leading: Icon(
                 Icons.info_outline_rounded,
                 color: scheme.onSurfaceVariant,
@@ -108,7 +111,7 @@ class SettingsHubPage extends StatelessWidget {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   icon: const Icon(Icons.info_outline_rounded),
-                  title: const Text('RedNote 1.0.0'),
+                  title: const Text('RedNote 1.0.1'),
                   content: const SingleChildScrollView(
                     child: Text(
                       '个人使用的小红书第三方客户端，非官方应用。\n\n网页登录由官方页面处理，应用不接收密码。登录过期或需要验证码时，请在官方网页内手动完成。\n\n网页与接口变化可能影响功能。',
@@ -428,7 +431,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: 16),
             Padding(
-              padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               child: Text(
                 '字体大小',
                 style: Theme.of(context).textTheme.titleSmall
@@ -437,6 +440,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             AppSectionCard(
               child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 leading: Icon(Icons.format_size_rounded, color: scheme.primary),
                 title: const Text('应用字体大小'),
                 subtitle: Column(
