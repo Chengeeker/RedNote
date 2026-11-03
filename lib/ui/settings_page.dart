@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart' show CupertinoIcons;
 
 import '../app_state.dart';
 import '../data/red_api.dart';
@@ -14,6 +15,8 @@ import '../core/theme/app_theme.dart';
 import '../core/utils/app_dialog.dart';
 import 'common.dart';
 import 'cache_page.dart';
+
+const _appVersion = '1.0.3';
 
 Widget _sectionTitle(BuildContext context, String title) => Padding(
   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -102,32 +105,185 @@ class SettingsHubPage extends StatelessWidget {
           AppSectionCard(
             child: ReviewPreferenceTile(
               title: '关于 RedNote',
-              subtitle: '版本 1.0.1',
+              subtitle: '版本 $_appVersion',
               leading: Icon(
                 Icons.info_outline_rounded,
                 color: scheme.onSurfaceVariant,
               ),
-              onTap: () => showAppDialog<void>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  icon: const Icon(Icons.info_outline_rounded),
-                  title: const Text('RedNote 1.0.1'),
-                  content: const SingleChildScrollView(
-                    child: Text(
-                      '个人使用的小红书第三方客户端，非官方应用。\n\n网页登录由官方页面处理，应用不接收密码。登录过期或需要验证码时，请在官方网页内手动完成。\n\n网页与接口变化可能影响功能。',
+              onTap: () => _showAboutDialog(context),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAboutDialog(BuildContext context) {
+    HapticFeedbackUtil.light();
+    final scheme = Theme.of(context).colorScheme;
+    Widget item(IconData icon, String text) => Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 16, color: scheme.primary),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12.5,
+              color: scheme.onSurfaceVariant,
+              height: 1.35,
+            ),
+          ),
+        ),
+      ],
+    );
+    showAppDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Image.asset(
+                  'assets/app_icon.png',
+                  width: 72,
+                  height: 72,
+                  fit: BoxFit.contain,
+                  cacheWidth: (72 * MediaQuery.devicePixelRatioOf(ctx)).round(),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Text(
+                  'RedNote',
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: context.adjustWeight(FontWeight.bold),
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'v$_appVersion',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: context.adjustWeight(FontWeight.bold),
+                      color: scheme.onPrimaryContainer,
                     ),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('关闭'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '个人使用的第三方客户端，非官方应用',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 30),
+            item(Icons.palette_outlined, 'Material You 动态配色与个性化字体'),
+            const SizedBox(height: 8),
+            item(Icons.photo_library_outlined, '笔记浏览、高清图库与视频播放'),
+            const SizedBox(height: 8),
+            item(
+              Icons.lock_outline_rounded,
+              '官方网页登录，不接收密码；登录过期或验证码请在网页处理，网页与接口变化可能影响功能。',
+            ),
+            const SizedBox(height: 26),
+            InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () async {
+                try {
+                  await app.api.call('openProject');
+                } catch (error) {
+                  if (context.mounted) showFailure(context, error);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: scheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      CupertinoIcons.chevron_left_slash_chevron_right,
+                      color: scheme.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'GitHub 项目地址',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: context.adjustWeight(FontWeight.bold),
+                            ),
+                          ),
+                          Text(
+                            'github.com/Chengeeker/RedNote',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      Icons.open_in_new_rounded,
+                      size: 16,
+                      color: scheme.primary,
                     ),
                   ],
                 ),
               ),
             ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: FilledButton.styleFrom(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            ),
+            child: const Text('我知道了'),
           ),
         ],
+        actionsAlignment: MainAxisAlignment.center,
       ),
     );
   }

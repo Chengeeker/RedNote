@@ -1,6 +1,7 @@
 package com.red.note
 
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.os.Bundle
 import android.webkit.CookieManager
 import com.red.note.protocol.VerificationPageUrl
@@ -57,6 +58,13 @@ class MainActivity: FlutterActivity() {
                         else result.success(counts)
                     }
                     creatorStats?.start()
+                }
+            } else if (call.method == "openProject") {
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/Chengeeker/RedNote")))
+                    result.success(null)
+                } catch (_: ActivityNotFoundException) {
+                    result.error("external_app", "无法打开项目地址，请安装或启用浏览器", null)
                 }
             } else if (call.method == "shareNote") {
                 val id = call.argument<String>("id").orEmpty()
