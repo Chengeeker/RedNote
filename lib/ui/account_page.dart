@@ -47,11 +47,19 @@ class _AccountPageState extends State<AccountPage> {
 
   Future<void> syncViews() async {
     if (syncing) return;
+    final accountId = userId;
+    final epoch = widget.app.epoch;
+    bool currentAccount() =>
+        mounted &&
+        widget.app.loggedIn &&
+        widget.app.epoch == epoch &&
+        userId == accountId;
     setState(() => syncing = true);
     try {
-      final ids =
-          feed.currentState?.notes.map((n) => n.reference.id).toSet() ??
-          <String>{};
+      final ids = selected == 0
+          ? (feed.currentState?.notes.map((n) => n.reference.id).toSet() ??
+                <String>{})
+          : <String>{};
       if (selected != 0 || ids.isEmpty) {
         final basic = objectOf(profile['basic_info'] ?? profile['basicInfo']);
         final id = textOf(
@@ -78,6 +86,7 @@ class _AccountPageState extends State<AccountPage> {
           );
         }
       }
+      if (!currentAccount()) return;
       if (ids.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context)
@@ -88,24 +97,24 @@ class _AccountPageState extends State<AccountPage> {
       final data = await widget.app.api.call('syncCreatorStats', {
         'ids': ids.toList(),
       });
-      if (!mounted) return;
+      if (!currentAccount()) return;
       final received = validatedViewCounts(data, ids);
       if (received.isEmpty) return;
       final next = {...viewCounts, ...received};
       if (!await widget.app.preferences.setString(
-        'viewCounts:$userId',
+        'viewCounts:$accountId',
         jsonEncode(next),
       )) {
         throw StateError('浏览量未保存');
       }
-      if (mounted) {
+      if (mounted && currentAccount()) {
         setState(() => viewCounts = next);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已同步 ${received.length} 条笔记的浏览量')),
         );
       }
     } catch (e) {
-      if (mounted) showFailure(context, e);
+      if (mounted && currentAccount()) showFailure(context, e);
     } finally {
       if (mounted) setState(() => syncing = false);
     }

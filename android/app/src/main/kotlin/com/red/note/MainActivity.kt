@@ -10,7 +10,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity: FlutterActivity() {
     private var loginResult: MethodChannel.Result? = null
-    private var statsResult: MethodChannel.Result? = null
+    private var creatorStats: CreatorStatsSync? = null
     private var mediaBridge: MediaBridge? = null
     private val runtime by lazy { ProtocolRuntime.get(this) }
 
@@ -35,6 +35,7 @@ class MainActivity: FlutterActivity() {
                     result.error("verification", "接口未提供可用的官方验证入口，请重试原请求取得新的验证信息；普通发现页无法代替本次验证", null)
                     return@setMethodCallHandler
                 }
+                creatorStats?.cancel()
                 loginResult = result
                 startActivityForResult(
                     Intent(this, LoginActivity::class.java)
@@ -44,11 +45,18 @@ class MainActivity: FlutterActivity() {
                 )
             } else if (call.method == "syncCreatorStats") {
                 val ids = call.argument<List<String>>("ids").orEmpty().filter { it.matches(Regex("[A-Za-z0-9]{1,128}")) }.take(500)
-                if (statsResult != null) result.error("busy", "同步页面已打开", null)
+                val session = runtime.active
+                if (creatorStats != null) result.error("busy", "正在同步浏览量", null)
+                else if (session == null) result.error("login", "请先登录后再同步浏览量", null)
                 else if (ids.isEmpty()) result.error("reference", "请先加载自己发布的笔记", null)
                 else {
-                    statsResult = result
-                    startActivityForResult(Intent(this, CreatorStatsActivity::class.java).putStringArrayListExtra("ids", ArrayList(ids)), 43)
+                    creatorStats = CreatorStatsSync(this, ids.toSet(), { runtime.active === session }) { counts, error ->
+                        creatorStats = null
+                        if (runtime.active !== session) result.error("cancelled", "账号已变化，已取消浏览量同步", null)
+                        else if (error != null) result.error(error.kind, error.message, error.details)
+                        else result.success(counts)
+                    }
+                    creatorStats?.start()
                 }
             } else if (call.method == "shareNote") {
                 val id = call.argument<String>("id").orEmpty()
@@ -72,6 +80,7 @@ class MainActivity: FlutterActivity() {
                     result.success(null)
                 }
             } else {
+                if (call.method == "logout") creatorStats?.cancel()
                 runtime.worker.execute {
                     try {
                         val output = runtime.invoke(call.method, call.arguments as? Map<*, *> ?: emptyMap<Any, Any>())
@@ -94,12 +103,6 @@ class MainActivity: FlutterActivity() {
     @Deprecated("Android activity result API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == 43) {
-            val result = statsResult
-            statsResult = null
-            val counts = org.json.JSONObject(data?.getStringExtra("counts") ?: "{}")
-            result?.success(counts.keys().asSequence().associateWith { counts.getLong(it) })
-        }
         if (requestCode == 42) {
             val result = loginResult
             loginResult = null
@@ -114,8 +117,7 @@ class MainActivity: FlutterActivity() {
         mediaBridge?.close()
         loginResult?.error("cancelled", "登录页面已关闭", null)
         loginResult = null
-        statsResult?.error("cancelled", "同步页面已关闭", null)
-        statsResult = null
+        creatorStats?.cancel()
         super.onDestroy()
     }
 }

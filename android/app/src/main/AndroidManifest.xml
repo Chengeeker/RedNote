@@ -6,7 +6,6 @@
         android:name="${applicationName}"
         android:icon="@drawable/rednote_launcher"
         android:roundIcon="@drawable/rednote_launcher">
-        <activity android:name=".CreatorStatsActivity" android:exported="false" android:theme="@style/NormalTheme" />
         <activity android:name=".PrivateChatActivity" android:exported="false" android:theme="@style/NormalTheme" android:windowSoftInputMode="adjustResize" />
         <activity android:name=".LoginActivity" android:exported="false" android:theme="@style/NormalTheme" />
         <activity

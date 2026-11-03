@@ -947,6 +947,95 @@ void main() {
       expect(find.text('999'), findsNothing);
     },
   );
+  testWidgets(
+    'creator refresh stays on profile and keeps cached views on failure',
+    (tester) async {
+      final state = await app();
+      await state.preferences.setString('viewCounts:u', '{"n":"78"}');
+      final pending = Completer<Json>();
+      respond = (call) => switch (call.method) {
+        'selfInfo' => {'user_id': 'u'},
+        'profile' => {
+          'basic_info': {'nickname': '测试用户', 'user_id': 'u'},
+        },
+        'userPosts' => {
+          'notes': [
+            {'id': 'n', 'title': '自己的笔记', 'xsec_token': 't'},
+          ],
+          'has_more': false,
+        },
+        'syncCreatorStats' => pending.future,
+        _ => {},
+      };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: AccountPage(app: state)),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('刷新个人资料'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(AccountPage), findsOneWidget);
+      expect(find.text('自己的笔记'), findsOneWidget);
+      final refreshButton = find.byWidgetPredicate(
+        (widget) => widget is IconButton && widget.tooltip == '刷新个人资料',
+      );
+      expect(tester.widget<IconButton>(refreshButton).onPressed, isNull);
+      await tester.tap(find.byTooltip('刷新个人资料'));
+      expect(calls.where((c) => c.method == 'syncCreatorStats'), hasLength(1));
+      pending.completeError(
+        PlatformException(code: 'timeout', message: '个人资料已刷新，浏览量同步超时，已保留原数据'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountPage), findsOneWidget);
+      expect(state.preferences.getString('viewCounts:u'), '{"n":"78"}');
+      expect(find.text('个人资料已刷新，浏览量同步超时，已保留原数据'), findsOneWidget);
+      expect(calls.where((c) => c.method == 'login'), isEmpty);
+      expect(tester.widget<IconButton>(refreshButton).onPressed, isNotNull);
+    },
+  );
+
+  testWidgets('late creator counts are discarded after account changes', (
+    tester,
+  ) async {
+    final state = await app();
+    final pending = Completer<Json>();
+    respond = (call) => switch (call.method) {
+      'selfInfo' => {'user_id': 'u'},
+      'profile' => {
+        'basic_info': {'nickname': '测试用户', 'user_id': 'u'},
+      },
+      'userPosts' => {
+        'notes': [
+          {'id': 'n', 'title': '自己的笔记', 'xsec_token': 't'},
+        ],
+        'has_more': false,
+      },
+      'syncCreatorStats' => pending.future,
+      _ => {},
+    };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: AccountPage(app: state)),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('刷新个人资料'));
+    await tester.pump();
+    expect(calls.where((c) => c.method == 'syncCreatorStats'), hasLength(1));
+    state.session = {
+      'loggedIn': true,
+      'user': {'user_id': 'other'},
+    };
+    state.epoch++;
+    pending.complete({'n': 99});
+    await tester.pumpAndSettle();
+    expect(state.preferences.getString('viewCounts:u'), isNull);
+    expect(state.preferences.getString('viewCounts:other'), isNull);
+    expect(find.text('已同步 1 条笔记的浏览量'), findsNothing);
+  });
+
   testWidgets('profile refresh syncs own views from other profile tabs', (
     tester,
   ) async {
