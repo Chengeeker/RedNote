@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../core/theme/app_theme.dart';
 import '../data/red_api.dart';
 import 'feed_page.dart';
 
@@ -116,13 +117,15 @@ class DiscoveryPageState extends State<DiscoveryPage> {
                           category,
                         );
                       },
-                style: TextButton.styleFrom(
-                  foregroundColor: category == textOf(choice['id'])
-                      ? Theme.of(context).colorScheme.onSurface
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                  minimumSize: const Size(48, 40),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                style: AppTheme.withoutPressOverlay(
+                  TextButton.styleFrom(
+                    foregroundColor: category == textOf(choice['id'])
+                        ? Theme.of(context).colorScheme.onSurface
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                    minimumSize: const Size(48, 40),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
                 child: Text(
                   textOf(choice['name']),

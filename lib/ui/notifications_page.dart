@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../core/theme/app_theme.dart';
 import '../data/red_api.dart';
 import '../core/design_system/components/review_frosted_app_bar.dart';
 import 'common.dart';
@@ -232,8 +233,9 @@ class _PrivateChatsSectionState extends State<_PrivateChatsSection> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text(
+              subtitle: XhsRichText(
                 chat.preview.isEmpty ? '暂无新消息' : chat.preview,
+                api: widget.app,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -393,10 +395,17 @@ class _NotificationListState extends State<_NotificationList>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final actionStyle = FilledButton.styleFrom(
+      minimumSize: const Size(0, 32),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      textStyle: Theme.of(context).textTheme.labelLarge
+          ?.copyWith(fontSize: 12, height: 1.2),
+      tapTargetSize: MaterialTapTargetSize.padded,
+    );
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
       children: [
-        for (final message in messages) _message(message),
+        for (final message in messages) _message(message, actionStyle),
         if (busy)
           const Center(
             child: Padding(
@@ -434,7 +443,7 @@ class _NotificationListState extends State<_NotificationList>
     );
   }
 
-  Widget _message(Json message) {
+  Widget _message(Json message, ButtonStyle actionStyle) {
     final user = objectOf(message['user_info']);
     var item = objectOf(message['item_info']);
     if (item['type'] == 'board_info') item = objectOf(item['attach_item_info']);
@@ -504,7 +513,7 @@ class _NotificationListState extends State<_NotificationList>
                   ),
                 ),
                 const SizedBox(height: 10),
-                Text(
+                XhsRichText(
                   [
                     title.isNotEmpty
                         ? title
@@ -513,13 +522,15 @@ class _NotificationListState extends State<_NotificationList>
                         : '',
                     date,
                   ].where((s) => s.isNotEmpty).join('  '),
+                  api: widget.app,
                   style: TextStyle(fontSize: 13, color: secondary),
                 ),
                 if (content.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
-                    child: Text(
+                    child: XhsRichText(
                       content,
+                      api: widget.app,
                       style: const TextStyle(fontSize: 15, height: 1.5),
                     ),
                   ),
@@ -527,12 +538,13 @@ class _NotificationListState extends State<_NotificationList>
                     validNote &&
                     commentId.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.only(top: 16),
+                    padding: const EdgeInsets.only(top: 12),
                     child: Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: [
                         FilledButton.tonalIcon(
+                          style: actionStyle,
                           onPressed: () => editComment(
                             context,
                             widget.app,
@@ -540,10 +552,11 @@ class _NotificationListState extends State<_NotificationList>
                             targetId: commentId,
                             author: textOf(actor['nickname']),
                           ),
-                          icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                          icon: const Icon(Icons.chat_bubble_outline, size: 14),
                           label: const Text('回复'),
                         ),
                         FilledButton.tonalIcon(
+                          style: actionStyle,
                           onPressed: pending.contains(commentId)
                               ? null
                               : () => like(commentId, note.reference, comment),
@@ -551,7 +564,7 @@ class _NotificationListState extends State<_NotificationList>
                             (likeValues[commentId] ?? comment['liked'] == true)
                                 ? Icons.favorite
                                 : Icons.favorite_border,
-                            size: 16,
+                            size: 14,
                           ),
                           label: const Text('赞'),
                         ),
@@ -580,14 +593,16 @@ class _NotificationListState extends State<_NotificationList>
                         onPressed: pending.contains(actorId)
                             ? null
                             : () => follow(actorId),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFFFF2442),
-                          side: const BorderSide(color: Color(0xFFFF2442)),
-                          fixedSize: const Size(76, 32),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          textStyle: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
+                        style: AppTheme.withoutPressOverlay(
+                          OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFFF2442),
+                            side: const BorderSide(color: Color(0xFFFF2442)),
+                            fixedSize: const Size(76, 32),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            textStyle: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                         child: Text(actor['fstatus'] == 'fans' ? '回关' : '关注'),

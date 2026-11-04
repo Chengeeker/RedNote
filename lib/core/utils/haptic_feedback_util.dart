@@ -106,7 +106,7 @@ class HapticSplashFactory extends InteractiveInkFeatureFactory {
   final InteractiveInkFeatureFactory _delegate;
 
   const HapticSplashFactory({
-    InteractiveInkFeatureFactory delegate = InkSplash.splashFactory,
+    InteractiveInkFeatureFactory delegate = NoSplash.splashFactory,
   }) : _delegate = delegate;
 
   @override

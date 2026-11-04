@@ -64,7 +64,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('RedNote'), findsOneWidget);
-      expect(find.text('v1.0.3'), findsOneWidget);
+      expect(find.text('v1.0.6'), findsOneWidget);
       expect(find.textContaining('复用自'), findsNothing);
       expect(find.byType(Divider), findsNothing);
       expect(
@@ -76,7 +76,7 @@ void main() {
         final version = tester.getRect(
           find
               .ancestor(
-                of: find.text('v1.0.3'),
+                of: find.text('v1.0.6'),
                 matching: find.byType(Container),
               )
               .first,

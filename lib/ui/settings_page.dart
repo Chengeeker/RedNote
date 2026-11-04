@@ -16,7 +16,7 @@ import '../core/utils/app_dialog.dart';
 import 'common.dart';
 import 'cache_page.dart';
 
-const _appVersion = '1.0.3';
+const _appVersion = '1.0.6';
 
 Widget _sectionTitle(BuildContext context, String title) => Padding(
   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -604,6 +604,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   children: [
                     Text('${((previewScale ?? app.fontScale) * 100).round()}%'),
                     Slider(
+                      overlayColor: AppTheme.pressOverlayColor,
                       key: const ValueKey('app-text-scale-slider'),
                       value: previewScale ?? app.fontScale,
                       min: 0.85,

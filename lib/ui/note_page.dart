@@ -506,11 +506,13 @@ class _NotePageState extends State<NotePage> {
                         const ['both', 'follows'].contains(note.user['fstatus'])
                     ? null
                     : followAuthor,
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFFFF2442),
-                  side: const BorderSide(color: Color(0xFFFF2442)),
-                  minimumSize: const Size(68, 30),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                style: AppTheme.withoutPressOverlay(
+                  OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFFF2442),
+                    side: const BorderSide(color: Color(0xFFFF2442)),
+                    minimumSize: const Size(68, 30),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
                 ),
                 child: Text(
                   followed ||
@@ -1083,10 +1085,12 @@ class _CommentTileState extends State<CommentTile> {
                           targetId: textOf(reply['id']),
                           author: name,
                         ),
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          foregroundColor: theme.colorScheme.onSurfaceVariant,
+                        style: AppTheme.withoutPressOverlay(
+                          TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            foregroundColor: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         child: const Text('回复'),
                       ),
@@ -1094,12 +1098,16 @@ class _CommentTileState extends State<CommentTile> {
                         message: '点赞回复',
                         child: TextButton.icon(
                           onPressed: busy ? null : () => like(reply),
-                          style: TextButton.styleFrom(
-                            minimumSize: const Size(48, 48),
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            foregroundColor: reply['liked'] == true
-                                ? theme.colorScheme.primary
-                                : theme.colorScheme.onSurfaceVariant,
+                          style: AppTheme.withoutPressOverlay(
+                            TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                              ),
+                              foregroundColor: reply['liked'] == true
+                                  ? theme.colorScheme.primary
+                                  : theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                           icon: Icon(
                             reply['liked'] == true
@@ -1203,10 +1211,12 @@ class _CommentTileState extends State<CommentTile> {
                         targetId: textOf(comment['id']),
                         author: textOf(user['nickname']),
                       ),
-                      style: TextButton.styleFrom(
-                        minimumSize: const Size(48, 48),
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        foregroundColor: theme.colorScheme.onSurfaceVariant,
+                      style: AppTheme.withoutPressOverlay(
+                        TextButton.styleFrom(
+                          minimumSize: const Size(48, 48),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          foregroundColor: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                       child: const Text('回复'),
                     ),
@@ -1215,10 +1225,12 @@ class _CommentTileState extends State<CommentTile> {
                             textOf(app.user['user_id'] ?? app.user['userid']))
                       TextButton(
                         onPressed: busy ? null : remove,
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          foregroundColor: theme.colorScheme.onSurfaceVariant,
+                        style: AppTheme.withoutPressOverlay(
+                          TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            foregroundColor: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         child: const Text('删除'),
                       ),
@@ -1226,12 +1238,14 @@ class _CommentTileState extends State<CommentTile> {
                       message: '点赞评论',
                       child: TextButton.icon(
                         onPressed: busy ? null : like,
-                        style: TextButton.styleFrom(
-                          minimumSize: const Size(48, 48),
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          foregroundColor: comment['liked'] == true
-                              ? theme.colorScheme.primary
-                              : theme.colorScheme.onSurfaceVariant,
+                        style: AppTheme.withoutPressOverlay(
+                          TextButton.styleFrom(
+                            minimumSize: const Size(48, 48),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            foregroundColor: comment['liked'] == true
+                                ? theme.colorScheme.primary
+                                : theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         icon: Icon(
                           comment['liked'] == true

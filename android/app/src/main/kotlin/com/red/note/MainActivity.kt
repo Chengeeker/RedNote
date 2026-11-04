@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.os.Bundle
 import android.webkit.CookieManager
 import com.red.note.protocol.VerificationPageUrl
+import com.red.note.protocol.ProfilePageUrl
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -14,9 +15,53 @@ class MainActivity: FlutterActivity() {
     private var creatorStats: CreatorStatsSync? = null
     private var mediaBridge: MediaBridge? = null
     private val runtime by lazy { ProtocolRuntime.get(this) }
+    private lateinit var navigation: MethodChannel
+    private var navigationReady = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        openPendingProfile()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openPendingProfile()
+    }
+
+    private fun openPendingProfile() {
+        if (!navigationReady) return
+        val url = intent.getStringExtra("private_chat_profile") ?: return
+        intent.removeExtra("private_chat_profile")
+        val profile = ProfilePageUrl.parse(url) ?: return
+        val chatId = intent.getStringExtra("return_chat_id").orEmpty()
+        if (!chatId.matches(Regex("[A-Za-z0-9_-]{1,128}"))) return
+        val chatName = intent.getStringExtra("return_chat_name").orEmpty().take(80)
+        val session = runtime.active
+        fun returnToChat(message: String? = null) {
+            if (isFinishing || isDestroyed || runtime.active !== session) return
+            if (message != null) android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
+            startActivity(Intent(this, PrivateChatActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                .putExtra("id", chatId).putExtra("name", chatName))
+        }
+        navigation.invokeMethod("openProfile", profile, object : MethodChannel.Result {
+            override fun success(result: Any?) = returnToChat()
+            override fun error(code: String, message: String?, details: Any?) = returnToChat("无法打开个人主页，请稍后重试")
+            override fun notImplemented() = returnToChat("个人主页暂时未就绪，请稍后重试")
+        })
+    }
 
     override fun configureFlutterEngine(engine: FlutterEngine) {
         super.configureFlutterEngine(engine)
+        navigation = MethodChannel(engine.dartExecutor.binaryMessenger, "com.red.note/navigation")
+        navigation.setMethodCallHandler { call, result ->
+            if (call.method == "ready") {
+                navigationReady = true
+                result.success(null)
+                openPendingProfile()
+            } else result.notImplemented()
+        }
         mediaBridge = MediaBridge(this, engine)
 
         // 尽早触发准备（如果已有登录态则不影响，如果无登录态则在后台准备游客环境）

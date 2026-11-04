@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../app_state.dart';
+import '../core/theme/app_theme.dart';
 import '../data/red_api.dart';
 import 'feed_page.dart';
 import 'profile_header.dart';
@@ -169,19 +170,21 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: FilledButton.tonal(
                   key: const ValueKey('profile-message'),
                   onPressed: chatBusy ? null : openChat,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 40),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
+                  style: AppTheme.withoutPressOverlay(
+                    FilledButton.styleFrom(
+                      minimumSize: const Size(0, 40),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      backgroundColor: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
+                      foregroundColor: Theme.of(context).colorScheme.onSurface,
                     ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    backgroundColor: Theme.of(context)
-                        .colorScheme
-                        .surfaceContainerHighest,
-                    foregroundColor: Theme.of(context).colorScheme.onSurface,
                   ),
                   child: const Text('发私信'),
                 ),

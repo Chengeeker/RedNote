@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../../app_state.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/media_support.dart';
 import 'gallery_original_provider.dart';
 import '../../core/settings/app_settings.dart';
@@ -1949,12 +1950,14 @@ class _GalleryGlassIconButtonState extends State<_GalleryGlassIconButton> {
           ),
           IconButton(
             tooltip: widget.tooltip,
-            style: IconButton.styleFrom(
-              fixedSize: const Size.square(48),
-              padding: EdgeInsets.zero,
-              foregroundColor: Colors.white,
-              backgroundColor: Colors.transparent,
-              shape: const CircleBorder(),
+            style: AppTheme.withoutPressOverlay(
+              IconButton.styleFrom(
+                fixedSize: const Size.square(48),
+                padding: EdgeInsets.zero,
+                foregroundColor: Colors.white,
+                backgroundColor: Colors.transparent,
+                shape: const CircleBorder(),
+              ),
             ),
             onPressed: widget.onPressed,
             icon: Opacity(

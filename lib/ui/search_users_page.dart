@@ -74,8 +74,9 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         ListTile(
           leading: UserAvatar(userImageUrl(user), size: 44, api: widget.app),
           title: Text(textOf(user['nickname'] ?? user['name'])),
-          subtitle: Text(
+          subtitle: XhsRichText(
             textOf(user['desc'] ?? user['description']),
+            api: widget.app,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),

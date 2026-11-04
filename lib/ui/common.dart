@@ -209,6 +209,7 @@ class _XhsRichTextState extends State<XhsRichText> {
         final spans = <InlineSpan>[];
         final baseSize =
             widget.style?.fontSize ??
+            DefaultTextStyle.of(context).style.fontSize ??
             Theme.of(context).textTheme.bodyMedium?.fontSize ??
             14;
         final emojiSize =
@@ -243,6 +244,7 @@ class _XhsRichTextState extends State<XhsRichText> {
                   dimension: emojiSize,
                   child: RemoteImage(
                     url,
+                    fit: BoxFit.contain,
                     api: widget.api,
                     label: part.text
                         .substring(1, part.text.length - 1)

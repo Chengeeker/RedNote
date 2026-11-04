@@ -1,6 +1,7 @@
 package com.red.note
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -15,10 +16,13 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.red.note.protocol.ProfilePageUrl
 
 class PrivateChatActivity : Activity() {
     private lateinit var web: WebView
     private lateinit var status: TextView
+    private var openingProfile = false
+    private var browserSession: org.json.JSONObject? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,9 +109,14 @@ class PrivateChatActivity : Activity() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView,
                     request: WebResourceRequest
-                ): Boolean = !LoginActivity.trustedPage(request.url.toString())
+                ): Boolean {
+                    val url = request.url.toString()
+                    if (request.isForMainFrame && openNativeProfile(view, url)) return true
+                    return !LoginActivity.trustedPage(url)
+                }
 
                 override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                    if (openNativeProfile(view, url, restoreHistory = true)) return
                     status.text = "正在打开小红书会话…"
                     status.visibility = View.VISIBLE
                 }
@@ -118,6 +127,7 @@ class PrivateChatActivity : Activity() {
                 }
 
                 override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
+                    if (openNativeProfile(view, url, restoreHistory = true)) return
                     updateChatLayout(view, url)
                 }
 
@@ -139,6 +149,7 @@ class PrivateChatActivity : Activity() {
         val runtime = ProtocolRuntime.get(this)
         runtime.load()
         val session = runtime.active
+        browserSession = session
         val cookies = CookieManager.getInstance()
         cookies.setAcceptCookie(true)
         cookies.setAcceptThirdPartyCookies(web, true)
@@ -157,6 +168,34 @@ class PrivateChatActivity : Activity() {
         val scale = ((resources.displayMetrics.widthPixels.toFloat() / 960f) * 100).toInt().coerceIn(40, 100)
         web.setInitialScale(scale)
         web.loadUrl(android.net.Uri.Builder().scheme("https").authority(host).appendPath("chat").appendPath(chatId).build().toString())
+    }
+
+    private fun openNativeProfile(view: WebView, url: String, restoreHistory: Boolean = false): Boolean {
+        if (ProfilePageUrl.parse(url) == null) return false
+        if (openingProfile) return true
+        if (ProtocolRuntime.get(this).active !== browserSession) {
+            finish()
+            return true
+        }
+        openingProfile = true
+        if (restoreHistory) {
+            view.stopLoading()
+            view.post {
+                if (!isFinishing && ProfilePageUrl.parse(view.url) != null && view.canGoBack()) view.goBack()
+            }
+        }
+        startActivity(Intent(this, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            .putExtra("private_chat_profile", url)
+            .putExtra("return_chat_id", intent.getStringExtra("id"))
+            .putExtra("return_chat_name", intent.getStringExtra("name")))
+        return true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        openingProfile = false
+        if (::web.isInitialized && ProtocolRuntime.get(this).active !== browserSession) finish()
     }
 
     @Deprecated("WebView history is handled before closing the activity")
@@ -192,11 +231,24 @@ class PrivateChatActivity : Activity() {
                     (document.head || document.documentElement).appendChild(style);
                   }
                   style.textContent = '.xhs-im-chat-window__header,.bottom-menu{display:none!important}.xhs-im-page{height:100vh!important}';
+                  if (!window.__rednoteProfileLinks) {
+                    window.__rednoteProfileLinks = true;
+                    document.addEventListener('click', function(event) {
+                      var link = event.target.closest ? event.target.closest('a[href]') : null;
+                      if (!link) return;
+                      var target = new URL(link.href, location.href);
+                      if (target.origin !== location.origin || !/^\/user\/profile\/[A-Za-z0-9_-]+\/?$/.test(target.pathname)) return;
+                      event.preventDefault();
+                      event.stopImmediatePropagation();
+                      location.href = target.href;
+                    }, true);
+                  }
                 })();
             """.trimIndent()
         } else {
             "var style=document.getElementById('rednote-native-chat-layout');if(style)style.remove();"
         }
-        view.evaluateJavascript(script, null)
+        val tapStyle = if (LoginActivity.trustedPage(url)) LoginActivity.noTapHighlightScript else ""
+        view.evaluateJavascript(tapStyle + script, null)
     }
 }

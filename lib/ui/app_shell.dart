@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import '../app_state.dart';
+import '../core/theme/app_theme.dart';
 import '../core/design_system/components/review_navigation_bar.dart';
 import '../core/design_system/components/review_frosted_app_bar.dart';
 import 'common.dart';
@@ -449,9 +450,13 @@ class SearchPageState extends State<SearchPage> {
                         ),
                         TextButton(
                           onPressed: () => unawaited(submit()),
-                          style: TextButton.styleFrom(
-                            foregroundColor: colors.onSurface,
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                          style: AppTheme.withoutPressOverlay(
+                            TextButton.styleFrom(
+                              foregroundColor: colors.onSurface,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                              ),
+                            ),
                           ),
                           child: const Text('搜索'),
                         ),
@@ -530,10 +535,14 @@ class SearchPageState extends State<SearchPage> {
                           width: width,
                           child: TextButton(
                             onPressed: () => chooseQuery(value),
-                            style: TextButton.styleFrom(
-                              alignment: Alignment.centerLeft,
-                              foregroundColor: colors.onSurface,
-                              padding: const EdgeInsets.symmetric(vertical: 10),
+                            style: AppTheme.withoutPressOverlay(
+                              TextButton.styleFrom(
+                                alignment: Alignment.centerLeft,
+                                foregroundColor: colors.onSurface,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                              ),
                             ),
                             child: Text(
                               value,

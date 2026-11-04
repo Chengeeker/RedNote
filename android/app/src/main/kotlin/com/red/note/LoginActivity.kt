@@ -123,7 +123,7 @@ class LoginActivity: Activity() {
 
             override fun onPageFinished(view: WebView, url: String) {
                 if (!trustedPage(url)) return
-                view.evaluateJavascript("(function(){return JSON.stringify({w:innerWidth,h:innerHeight,t:Math.round(performance.timeOrigin||(Date.now()-performance.now()))});})()") { raw ->
+                view.evaluateJavascript(noTapHighlightScript + "(function(){return JSON.stringify({w:innerWidth,h:innerHeight,t:Math.round(performance.timeOrigin||(Date.now()-performance.now()))});})()") { raw ->
                     try {
                         val value = JSONObject("{\"value\":$raw}").getString("value")
                         val environment = JSONObject(value)
@@ -276,6 +276,16 @@ class LoginActivity: Activity() {
         .joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     companion object {
+        val noTapHighlightScript = """
+            (function() {
+              var id = 'rednote-no-tap-highlight';
+              if (document.getElementById(id)) return;
+              var style = document.createElement('style');
+              style.id = id;
+              style.textContent = '*{-webkit-tap-highlight-color:transparent!important}';
+              (document.head || document.documentElement).appendChild(style);
+            })();
+        """.trimIndent()
         val allowedHosts = setOf("www.xiaohongshu.com", "edith.xiaohongshu.com", "so.xiaohongshu.com", "www.rednote.com", "webapi.rednote.com")
         fun trustedPage(url: String): Boolean = try {
             val u = URI(url)

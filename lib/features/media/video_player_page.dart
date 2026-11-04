@@ -11,6 +11,7 @@ import '../../data/media_support.dart';
 import '../../core/storage/storage_path_resolver.dart';
 import '../../core/utils/app_toast.dart';
 import '../../core/utils/haptic_feedback_util.dart';
+import '../../core/theme/app_theme.dart';
 
 enum _VideoDragMode { none, brightness, volume }
 
@@ -691,6 +692,7 @@ class _RedVideoPlayerPageState extends State<RedVideoPlayerPage>
                 thumbColor: Colors.white,
               ),
               child: Slider(
+                overlayColor: AppTheme.pressOverlayColor,
                 value: duration.inMilliseconds > 0
                     ? position.inMilliseconds
                           .clamp(0, duration.inMilliseconds)

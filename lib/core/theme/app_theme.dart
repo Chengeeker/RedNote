@@ -164,6 +164,23 @@ class _PredictiveBackRouteObserverState
 class AppTheme {
   AppTheme._();
 
+  static final pressOverlayColor = WidgetStateProperty.resolveWith<Color?>(
+    (states) =>
+        states.contains(WidgetState.pressed) ||
+            states.contains(WidgetState.dragged)
+        ? Colors.transparent
+        : null,
+  );
+  static final _pressButtonStyle = ButtonStyle(overlayColor: pressOverlayColor);
+
+  static ButtonStyle withoutPressOverlay(ButtonStyle style) => style.copyWith(
+    overlayColor: WidgetStateProperty.resolveWith(
+      (states) =>
+          pressOverlayColor.resolve(states) ??
+          style.overlayColor?.resolve(states),
+    ),
+  );
+
   // Preset Theme Color Palettes
   static const List<Map<String, dynamic>> themeColors = [
     {'name': '经典红', 'color': Color(0xFFFA2F3A)},
@@ -299,6 +316,14 @@ class AppTheme {
       useMaterial3: true,
       pageTransitionsTheme: _reviewPageTransitionsTheme,
       splashFactory: const HapticSplashFactory(),
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      textButtonTheme: TextButtonThemeData(style: _pressButtonStyle),
+      filledButtonTheme: FilledButtonThemeData(style: _pressButtonStyle),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: _pressButtonStyle),
+      iconButtonTheme: IconButtonThemeData(style: _pressButtonStyle),
+      switchTheme: SwitchThemeData(overlayColor: pressOverlayColor),
+      radioTheme: RadioThemeData(overlayColor: pressOverlayColor),
       colorScheme: scheme,
       textTheme: textTheme,
       scaffoldBackgroundColor: scheme.surface,
@@ -349,6 +374,7 @@ class AppTheme {
         ),
       ),
       tabBarTheme: TabBarThemeData(
+        overlayColor: pressOverlayColor,
         labelPadding: const EdgeInsets.symmetric(horizontal: 12),
         labelStyle: TextStyle(
           fontWeight: adjustFontWeight(FontWeight.w600, fontWeightAdjustment),
@@ -390,11 +416,13 @@ class AppTheme {
         foregroundColor: scheme.onPrimaryContainer,
       ),
       searchBarTheme: SearchBarThemeData(
+        overlayColor: pressOverlayColor,
         shape: const WidgetStatePropertyAll(StadiumBorder()),
         elevation: const WidgetStatePropertyAll(0),
         backgroundColor: WidgetStatePropertyAll(scheme.surfaceContainerHigh),
       ),
       navigationBarTheme: NavigationBarThemeData(
+        overlayColor: pressOverlayColor,
         elevation: 0,
         height: 68,
         backgroundColor: scheme.surfaceContainer,
@@ -470,6 +498,14 @@ class AppTheme {
       useMaterial3: true,
       pageTransitionsTheme: _reviewPageTransitionsTheme,
       splashFactory: const HapticSplashFactory(),
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      textButtonTheme: TextButtonThemeData(style: _pressButtonStyle),
+      filledButtonTheme: FilledButtonThemeData(style: _pressButtonStyle),
+      outlinedButtonTheme: OutlinedButtonThemeData(style: _pressButtonStyle),
+      iconButtonTheme: IconButtonThemeData(style: _pressButtonStyle),
+      switchTheme: SwitchThemeData(overlayColor: pressOverlayColor),
+      radioTheme: RadioThemeData(overlayColor: pressOverlayColor),
       colorScheme: effectiveScheme,
       textTheme: textTheme,
       scaffoldBackgroundColor: bgColor,
@@ -522,6 +558,7 @@ class AppTheme {
         ),
       ),
       tabBarTheme: TabBarThemeData(
+        overlayColor: pressOverlayColor,
         labelPadding: const EdgeInsets.symmetric(horizontal: 12),
         labelStyle: TextStyle(
           fontWeight: adjustFontWeight(FontWeight.w600, fontWeightAdjustment),
@@ -567,6 +604,7 @@ class AppTheme {
         foregroundColor: effectiveScheme.onPrimaryContainer,
       ),
       searchBarTheme: SearchBarThemeData(
+        overlayColor: pressOverlayColor,
         shape: const WidgetStatePropertyAll(StadiumBorder()),
         elevation: const WidgetStatePropertyAll(0),
         backgroundColor: WidgetStatePropertyAll(
@@ -576,6 +614,7 @@ class AppTheme {
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
+        overlayColor: pressOverlayColor,
         elevation: 0,
         height: 68,
         backgroundColor: navBgColor,
