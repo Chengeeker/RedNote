@@ -1,11 +1,11 @@
 param(
-    [string]$JavaHome = 'D:\jdk17',
-    [string]$FlutterCommand = 'D:\flutter_sdk\bin\flutter.bat'
+    [string]$JavaHome = $env:JAVA_HOME
 )
 $ErrorActionPreference = 'Stop'
+if (!$JavaHome) { throw 'Set JAVA_HOME to a JDK 17 installation or pass -JavaHome.' }
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $properties = @{}
-Get-Content -LiteralPath (Join-Path $projectRoot 'android/key.properties') | ForEach-Object {
+Get-Content -LiteralPath (Join-Path $projectRoot 'key.properties') | ForEach-Object {
     if ($_ -match '^([^#=]+)=(.*)$') { $properties[$matches[1].Trim()] = $matches[2].Trim() }
 }
 $sourceStore = $properties['storeFile']
@@ -32,16 +32,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'BKS certificate export failed.' }
     Push-Location $projectRoot
     try {
-        $flutterRoot = Split-Path -Parent (Split-Path -Parent $FlutterCommand)
-        $dart = Join-Path $flutterRoot 'bin/cache/dart-sdk/bin/dart.exe'
-        $flutterTools = Join-Path $flutterRoot 'packages/flutter_tools'
-        $snapshot = Join-Path $flutterRoot 'bin/cache/flutter_tools.snapshot'
-        $packages = Join-Path $flutterTools '.dart_tool/package_config.json'
-        if (!(Test-Path -LiteralPath $dart -PathType Leaf) -or !(Test-Path -LiteralPath $snapshot -PathType Leaf) -or !(Test-Path -LiteralPath $packages -PathType Leaf)) {
-            throw 'The configured Flutter SDK is missing its cached Dart tool files.'
-        }
-        & $dart "--packages=$packages" $snapshot build apk --release --no-pub --target-platform android-arm64
-        if ($LASTEXITCODE -ne 0) { throw 'Release build failed.' }
+        & (Join-Path $projectRoot 'gradlew.bat') --no-daemon :app:testDebugUnitTest :app:assembleRelease
+        if ($LASTEXITCODE -ne 0) { throw 'Compose release build failed.' }
     } finally { Pop-Location }
 } finally {
     if (Test-Path -LiteralPath $temporaryStore) { Remove-Item -LiteralPath $temporaryStore -Force }
