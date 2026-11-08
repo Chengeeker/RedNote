@@ -40,6 +40,7 @@ internal class GlassOptics(context: Context) {
         dragging: Boolean = false,
         kind: Int = 0,
         touch: Float = 0f,
+        translucent: Boolean = false,
     ) {
         val fade = if (lens) pressed.coerceIn(.001f, 1f) else 1f
         val dpr = density / 3f
@@ -49,7 +50,7 @@ internal class GlassOptics(context: Context) {
             if (lens) {
                 if (dark) 1f else 0f
             } else {
-                if (dark || kind == 1) 0f else 1f
+                if (dark || kind == 1) 0f else if (translucent && kind == 0) 245f / 255 else 1f
             }
         shader.apply {
             setFloatUniform("uSize", size.width, size.height)
@@ -64,7 +65,8 @@ internal class GlassOptics(context: Context) {
                 (if (lens) {
                     if (dark) 38f / 255 else 24f / 255
                 } else {
-                    if (dark || kind == 1) .4f else 240f / 255
+                    if (kind == 0) { if (translucent) { if (dark) .4f else .42f } else 240f / 255 }
+                    else if (dark || kind == 1) .4f else 240f / 255
                 }) * fade,
             )
             setFloatUniform(
@@ -182,6 +184,7 @@ internal fun GlassNavigationGpu(
     backdrop: GlassBackdrop,
     labels: GraphicsLayer,
     activeLabels: GraphicsLayer,
+    translucent: Boolean,
     lens: Float,
     pressed: Float,
     dark: Boolean,
@@ -222,10 +225,10 @@ internal fun GlassNavigationGpu(
         }
     }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
-    val bodyBlur = remember(density) { navBlurEffect(1.5f * density) }
+    val bodyBlur = remember(density, translucent, dark) { navBlurEffect((if (translucent && !dark) 4f else 1.5f) * density) }
     val frostBlur = remember(density) { navBlurEffect(6f * density) }
     val bodyEffects =
-        remember(dark, density) { mutableMapOf<Size, androidx.compose.ui.graphics.RenderEffect>() }
+        remember(dark, density, translucent) { mutableMapOf<Size, androidx.compose.ui.graphics.RenderEffect>() }
     Box(
         modifier
             .onGloballyPositioned { origin = it.positionInRoot() }
@@ -251,7 +254,7 @@ internal fun GlassNavigationGpu(
                     bodyEffects[size]
                         ?: run {
                             bodyEffects.clear()
-                            optics.first.configure(size, bar, d, dark)
+                            optics.first.configure(size, bar, d, dark, translucent = translucent)
                             optics.first.effect().also { bodyEffects[size] = it }
                         }
                 water.alpha = pressed
@@ -289,7 +292,7 @@ internal fun GlassNavigationGpu(
                                 drawLayer(pillBlur)
                                 drawRect(
                                     (if (dark) Color.White else Color.Black).copy(
-                                        alpha = 38f / 255 * resting
+                                        alpha = (if (translucent && !dark) .08f else 38f / 255) * resting
                                     )
                                 )
                             }

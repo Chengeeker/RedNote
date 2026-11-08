@@ -1,6 +1,6 @@
 # RedNote
 
-原生 Android Kotlin/Jetpack Compose 应用。项目根目录就是 Compose 工程入口，当前版本 `1.1.8+76`。Flutter 历史版本仍可从 Git 恢复。
+原生 Android Kotlin/Jetpack Compose 应用。项目根目录就是 Compose 工程入口，当前版本 `1.1.13+81`。Flutter 历史版本仍可从 Git 恢复。
 
 ## 功能
 
@@ -12,7 +12,7 @@
 
 ## 构建与检查
 
-使用 JDK 17 和 Android SDK。将 `JAVA_HOME` 指向 JDK 17，再将项目根目录作为 Gradle 工程导入 Android Studio。应用最低支持 Android 24，正式包仅构建 `arm64-v8a`。
+使用 JDK 21 和 Android SDK。将 `JAVA_HOME` 指向 JDK 21，再将项目根目录作为 Gradle 工程导入 Android Studio。应用最低支持 Android 24，正式包仅构建 `arm64-v8a`。
 
 本地 SDK 路径由 `local.properties` 配置。构建签名包需要自己的 BKS 密钥和 `key.properties`，其中包含 `storeFile`、`storePassword`、`keyAlias`、`keyPassword`。签名脚本使用本地 Gradle 缓存中的 Bouncy Castle。两份本地配置均由 Git 忽略。
 
@@ -22,4 +22,4 @@
 python .\tool\verify_release.py
 ```
 
-构建脚本复用原 BKS 签名，运行 JVM/Robolectric 回归并构建正式 Release APK。最终 arm64 包名为 `RedNote-v1.1.8-arm64.apk`。
+构建脚本复用原 BKS 签名，运行 JVM/Robolectric 回归并构建正式 Release APK。最终 arm64 包名为 `RedNote-v1.1.13-arm64.apk`。

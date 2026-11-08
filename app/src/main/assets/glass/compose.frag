@@ -10,6 +10,7 @@ uniform float blur;
 uniform float denseBlur;
 uniform vec2 blurDirection;
 uniform float indicator;
+uniform float indicatorAlpha;
 uniform float dark;
 uniform float labelPass;
 uniform float pillBlur;
@@ -58,7 +59,7 @@ void main() {
             }
             color = mix(color, blurred / sum, coverage * indicator);
         }
-        float alpha = coverage * indicator * (38.0 / 255.0);
+        float alpha = coverage * indicator * indicatorAlpha;
         color = vec4(vec3(dark * alpha), alpha) + color * (1.0 - alpha);
     }
     if (labelPass > 0.0) {

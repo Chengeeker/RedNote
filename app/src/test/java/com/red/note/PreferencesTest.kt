@@ -98,4 +98,23 @@ class PreferencesTest {
         assertEquals("", takeCharacters(value, 0))
         assertEquals(value, takeCharacters(value, 2000))
     }
+
+    @Test
+    fun glassStyleDefaultsToFrostedAndPersistsWithoutChangingGlassEnablement() {
+        val app = RuntimeEnvironment.getApplication()
+        val current = app.getSharedPreferences("compose_preferences", 0)
+        current.edit().clear().commit()
+        val prefs = Preferences(app)
+        assertFalse(prefs.bool("translucentNavigationGlass", false))
+        prefs.set("liquidGlass", true)
+        prefs.set("translucentNavigationGlass", true)
+        assertTrue(Preferences(app).bool("translucentNavigationGlass", false))
+        prefs.set("liquidGlass", false)
+        assertTrue(Preferences(app).bool("translucentNavigationGlass", false))
+        prefs.set("translucentNavigationGlass", false)
+        assertFalse(Preferences(app).bool("translucentNavigationGlass", false))
+        assertFalse(prefs.bool("liquidGlass"))
+        current.edit().putString("translucentNavigationGlass", "invalid").commit()
+        assertFalse(Preferences(app).bool("translucentNavigationGlass", false))
+    }
 }

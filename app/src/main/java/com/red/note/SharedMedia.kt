@@ -30,7 +30,7 @@ internal fun Modifier.sharedTitle(scope: Note): Modifier {
             enter = fadeIn(tween(duration, easing = FastOutSlowInEasing)),
             exit = fadeOut(tween(duration, easing = FastOutSlowInEasing)),
             resizeMode =
-                SharedTransitionScope.ResizeMode.ScaleToBounds(
+                SharedTransitionScope.ResizeMode.scaleToBounds(
                     ContentScale.Fit,
                     Alignment.TopStart,
                 ),

@@ -1,5 +1,11 @@
 package com.red.note
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -103,11 +109,10 @@ internal fun AccountPage(
                 false,
                 actions = {
                     Spacer(Modifier.weight(1f))
-                    if (state.loggedIn) GlyphButton("refresh", "刷新个人资料", !busy) { refresh(true) }
+                    if (state.loggedIn) ProfileRefreshButton(busy) { refresh(true) }
                     GlyphButton("settings_outlined", "设置", action = settings)
                 },
             )
-            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             if (failure.isNotEmpty()) Failure(failure) { refresh(false) }
             if (state.loggedIn)
                 Row {
@@ -176,6 +181,28 @@ internal fun AccountPage(
             header()
             LoginPrompt(activity, "登录后查看个人笔记", fill = false)
         }
+}
+
+@Composable
+internal fun ProfileRefreshButton(busy: Boolean, refresh: () -> Unit) {
+    val angle = if (busy) {
+        val motion = rememberInfiniteTransition(label = "profile-refresh")
+        motion.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
+            label = "profile-refresh-angle",
+        )
+    } else rememberUpdatedState(0f)
+    IconButton(
+        onClick = tapAction(refresh),
+        enabled = !busy,
+        colors = IconButtonDefaults.iconButtonColors(disabledContentColor = LocalContentColor.current),
+    ) {
+        Box(Modifier.graphicsLayer { rotationZ = angle.value }) {
+            Glyph("refresh", "刷新个人资料")
+        }
+    }
 }
 
 @Composable

@@ -325,6 +325,50 @@ class MediaReturnTest {
     }
 
     @Test
+    fun refreshingProfileKeepsTagsTabsAndCardsInPlace() {
+        val activity = compose.activity
+        lateinit var state: RedState
+        compose.runOnUiThread {
+            state = RedState(activity.application)
+            state.preferences.set("liquidGlass", false)
+            state.session = JSONObject("""{"loggedIn":true,"user":{"user_id":"owner"}}""")
+            state.accountProfile.profile =
+                JSONObject("""{"nickname":"刷新测试主页","desc":"已有签名","tags":[{"name":"标签"}]}""")
+            state.feed("userPosts:${JSONObject(mapOf("id" to "owner"))}").apply {
+                notes = listOf(Note("post", "", "pc_user", JSONObject().put("title", "原位笔记")))
+                more = false
+            }
+            activity.setContent {
+                AppTheme(state) { AccountPage(state, activity, {}, {}, {}, {}, {}) }
+            }
+        }
+        val before = listOf("已有签名", "笔记", "收藏", "原位笔记").associateWith {
+            compose.onNodeWithText(it).getUnclippedBoundsInRoot()
+        }
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        state.runtime.worker.execute {
+            entered.countDown()
+            release.await(10, java.util.concurrent.TimeUnit.SECONDS)
+        }
+        try {
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            compose.mainClock.autoAdvance = false
+            compose.onNodeWithContentDescription("刷新个人资料").performClick()
+            compose.mainClock.advanceTimeBy(300)
+            compose.onNodeWithContentDescription("刷新个人资料").assertIsNotEnabled()
+            before.forEach { (text, bounds) ->
+                assertEquals(bounds, compose.onNodeWithText(text).getUnclippedBoundsInRoot())
+            }
+        } finally {
+            compose.runOnUiThread { activity.setContent {} }
+            compose.waitForIdle()
+            release.countDown()
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
     fun profileKeepsHeaderTabAndCardPositionWhenReturningFromSavedAndLikedPosts() {
         val activity = compose.activity
         val opened = mutableStateOf(false)

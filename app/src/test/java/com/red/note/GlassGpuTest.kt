@@ -45,7 +45,7 @@ class GlassGpuTest {
         val output = Bitmap.createBitmap(256, 86, Bitmap.Config.ARGB_8888)
         fun draw(shape: Rect, lens: Boolean = false) {
             output.eraseColor(Color.TRANSPARENT)
-            optics.configure(Size(256f, 86f), shape, 1f, true, lens, if (lens) 1f else 0f, lens)
+            optics.configure(Size(256f, 86f), shape, 1f, true, lens, if (lens) 1f else 0f, lens, translucent = true)
             val target = hostCanvas(output)
             target.drawRect(0f, 0f, 256f, 86f, Paint().apply { shader = optics.shader })
         }
@@ -81,9 +81,9 @@ class GlassGpuTest {
             "background",
             BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
         )
-        for (dark in listOf(false, true)) for (lens in listOf(false, true)) {
+        for (translucent in listOf(false, true)) for (dark in listOf(false, true)) for (lens in listOf(false, true)) {
             val shape = if (lens) Rect(79.5f, 9.5f, 176.5f, 76.5f) else Rect(20f, 15f, 236f, 71f)
-            optics.configure(Size(256f, 86f), shape, 1f, dark, lens, if (lens) 1f else 0f, lens)
+            optics.configure(Size(256f, 86f), shape, 1f, dark, lens, if (lens) 1f else 0f, lens, translucent = translucent)
             assertNotNull(optics.effect())
             val output = Bitmap.createBitmap(256, 86, Bitmap.Config.ARGB_8888)
             hostCanvas(output).drawRect(0f, 0f, 256f, 86f, Paint().apply { shader = optics.shader })
@@ -95,7 +95,7 @@ class GlassGpuTest {
                 bytes[4 * i + 2] = Color.blue(c).toByte()
                 bytes[4 * i + 3] = Color.alpha(c).toByte()
             }
-            java.io.File("build/parity/agsl-$dark-$lens.rgba").apply {
+            java.io.File("build/parity/agsl-$translucent-$dark-$lens.rgba").apply {
                 parentFile.mkdirs()
                 writeBytes(bytes)
             }
@@ -114,5 +114,31 @@ class GlassGpuTest {
             assertNotNull(optics.effect())
         }
         source.recycle()
+    }
+
+    @Test
+    fun glassStyleSwitchRestoresOriginalAndLeavesOtherGlassUntouched() {
+        val optics = GlassOptics(RuntimeEnvironment.getApplication())
+        val source = Bitmap.createBitmap(256, 86, Bitmap.Config.ARGB_8888)
+        source.eraseColor(Color.BLUE)
+        optics.shader.setInputShader("background", BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP))
+        val output = Bitmap.createBitmap(256, 86, Bitmap.Config.ARGB_8888)
+        fun sample(clear: Boolean, kind: Int = 0, lens: Boolean = false): Int {
+            output.eraseColor(Color.TRANSPARENT)
+            optics.configure(Size(256f, 86f), Rect(20f, 15f, 236f, 71f), 1f, false,
+                lens = lens, pressed = if (lens) 1f else 0f, kind = kind, translucent = clear)
+            hostCanvas(output).drawRect(0f, 0f, 256f, 86f, Paint().apply { shader = optics.shader })
+            assertEquals(0, Color.alpha(output.getPixel(4, 43)))
+            return output.getPixel(128, 43)
+        }
+        val classic = sample(false)
+        val clear = sample(true)
+        assertTrue(Color.red(classic) > 220)
+        assertTrue(Color.blue(clear) - Color.red(clear) > 80)
+        assertEquals(classic, sample(false))
+        for (kind in listOf(1, 3)) assertEquals(sample(false, kind), sample(true, kind))
+        assertEquals(sample(false, lens = true), sample(true, lens = true))
+        source.recycle()
+        output.recycle()
     }
 }

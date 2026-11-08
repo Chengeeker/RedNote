@@ -10,6 +10,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import coil.imageLoader
+import kotlin.math.roundToInt
 import kotlinx.coroutines.*
 
 @Composable
@@ -119,19 +122,6 @@ internal fun SettingsContent(
     var busy by remember { mutableStateOf(false) }
     var cacheFailure by remember { mutableStateOf("") }
     var pendingThresholdCheck by remember { mutableIntStateOf(-1) }
-    val weightLabel =
-        if (!p.bool("customWeight")) "跟随系统"
-        else
-            mapOf(
-                    -300 to "极细",
-                    -200 to "细",
-                    -100 to "偏细",
-                    0 to "默认",
-                    100 to "中等",
-                    200 to "偏粗",
-                    300 to "加粗",
-                )[p.int("weightDelta")]
-                .orEmpty()
     fun path(type: Int, video: Boolean): String =
         (if (video) "Movies" else "Pictures") +
             "/RedNote/" +
@@ -216,7 +206,7 @@ internal fun SettingsContent(
                     }
                 }
             }
-            "个性化" -> PersonalizationContent(state, weightLabel) { dialog = "weight" }
+            "个性化" -> PersonalizationContent(state)
 
             "存储设置" ->
                 Section {
@@ -391,34 +381,6 @@ internal fun SettingsContent(
         }
     }
     when (dialog) {
-        "weight" ->
-            AppAlertDialog(
-                onDismissRequest = { dialog = "" },
-                title = { Text("选择字体粗细") },
-                text = {
-                    Column {
-                        listOf(-1000, -300, -200, -100, 0, 100, 200, 300).forEachIndexed { i, value
-                            ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable {
-                                    if (value != -1000) p.set("weightDelta", value)
-                                    p.set("customWeight", value != -1000)
-                                    dialog = ""
-                                },
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    if (value == -1000) !p.bool("customWeight")
-                                    else p.bool("customWeight") && p.int("weightDelta") == value,
-                                    null,
-                                )
-                                Text(listOf("跟随系统", "极细", "细", "偏细", "默认", "中等", "偏粗", "加粗")[i])
-                            }
-                        }
-                    }
-                },
-                confirmButton = { TextButton(onClick = tapAction { dialog = "" }) { Text("取消") } },
-            )
         "imagePath",
         "videoPath" ->
             ModalBottomSheet(onDismissRequest = { dialog = "" }) {
@@ -524,12 +486,9 @@ internal fun SettingsContent(
 }
 
 @Composable
-internal fun PersonalizationContent(
-    state: RedState,
-    weightLabel: String,
-    chooseWeight: () -> Unit,
-) {
+internal fun PersonalizationContent(state: RedState) {
     val p = state.preferences
+    val translucent = p.bool("translucentNavigationGlass", false)
     Column {
         Section("明暗模式") {
             listOf("跟随系统", "浅色模式", "深色模式").forEachIndexed { i, label ->
@@ -596,7 +555,43 @@ internal fun PersonalizationContent(
         }
         Spacer(Modifier.height(16.dp))
         Section("字体粗细") {
-            SettingRow("自定义应用字体粗细", "format_bold_rounded", "当前：$weightLabel") { chooseWeight() }
+            val customWeight = p.bool("customWeight")
+            val committedDelta = if (customWeight) p.int("weightDelta").coerceIn(-300, 300)
+                else state.session.optInt("systemFontWeight")
+            var weight by remember(p.revision, committedDelta) {
+                mutableFloatStateOf(committedDelta.toFloat().coerceIn(-300f, 300f))
+            }
+            val weightLabel = if (!customWeight && weight == committedDelta.toFloat()) "跟随系统"
+                else listOf("极细", "细", "偏细", "默认", "中等", "偏粗", "加粗")[
+                    ((weight + 300) / 100).roundToInt().coerceIn(0, 6)
+                ]
+            Row(
+                Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Glyph("format_bold_rounded", tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(weightLabel, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        TextButton(
+                            onClick = tapAction { p.set("customWeight", false) },
+                            enabled = customWeight,
+                        ) { Text("重置") }
+                    }
+                    Slider(
+                        value = weight,
+                        onValueChange = { weight = it },
+                        modifier = Modifier.semantics { contentDescription = "字体粗细" },
+                        valueRange = -300f..300f,
+                        steps = 5,
+                        onValueChangeFinished = {
+                            p.set("weightDelta", weight.roundToInt())
+                            p.set("customWeight", true)
+                        },
+                    )
+                }
+            }
             Column(
                 Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp)
                     .background(
@@ -613,7 +608,13 @@ internal fun PersonalizationContent(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "RedNote 极简现代体验：这是一段用于预览字体粗细的示例文本。@开发者 #话题#",
-                    style = MaterialTheme.typography.bodyMedium.copy(lineHeight = 19.6.sp),
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        lineHeight = 19.6.sp,
+                        fontWeight = FontWeight(
+                            ((MaterialTheme.typography.bodyMedium.fontWeight?.weight ?: 400) -
+                                committedDelta + weight.roundToInt()).coerceIn(100, 900)
+                        ),
+                    ),
                 )
             }
         }
@@ -652,10 +653,15 @@ internal fun PersonalizationContent(
                 false,
                 "用于悬浮底栏和图库操作按钮",
             )
+            if (p.bool("liquidGlass") && p.bool("floating", true)) {
+                NavigationGlassChoice(translucent, fontScale = appTextSize(14.sp).value / 14f,
+                    hapticsEnabled = p.bool("haptics", true)) { p.set("translucentNavigationGlass", it) }
+            }
         }
         Spacer(Modifier.height(16.dp))
         Section("触感与震动") { SettingToggle(state, "触感与震动反馈", "haptics", "vibration_rounded", true) }
     }
+
 }
 
 @Composable

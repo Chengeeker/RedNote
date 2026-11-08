@@ -41,13 +41,14 @@ attrs=(I*15)(0x3033,1,0x3040,0x40,0x3024,8,0x3023,8,0x3022,8,0x3021,8,0x3038)
 conf=P();count=I()
 assert eglChooseConfig(d,attrs,byref(conf),1,byref(count)) and count.value
 mode = sys.argv[1] if len(sys.argv) > 1 else "nav"
+translucent = "--translucent" in sys.argv
 W,H=(412,172) if mode=="top" else (256,86)
 surface=eglCreatePbufferSurface(d,conf,(I*5)(0x3057,W,0x3056,H,0x3038))
 ctx=eglCreateContext(d,conf,None,(I*3)(0x3098,3,0x3038))
 assert surface and ctx and eglMakeCurrent(d,surface,surface,ctx)
 print('Renderer:',glGetString(0x1f01).decode())
-base=Path('compose/app/src/main/assets/glass')
-src=Path('compose/app/src/main/java/com/red/note/GlassView.kt').read_text(encoding='utf-8')
+base=Path('app/src/main/assets/glass')
+src=Path('app/src/main/java/com/red/note/GlassView.kt').read_text(encoding='utf-8')
 vs=src.split('"""#version',1)[1].split('"""',1)[0]
 vs=('#version'+vs).encode()
 def program(name):
@@ -95,7 +96,7 @@ def blend(on):
 def comp(dst,source,flip=0,blur=0,vertical=False,indicator=0,labels=0,inner=0):
  use(compose,dst);sampler(compose,'source',0,source)
  for n,v in dict(flip=(flip,),blur=(blur,),denseBlur=(int(mode=="top"),),blurDirection=(0,1) if vertical else (1,0),
-                 indicator=(indicator,),dark=(dark,),pill=pill,labelPass=(labels,),pillBlur=(inner,)).items():uniform(compose,n,*v)
+                 indicator=(indicator,),indicatorAlpha=(.08 if translucent and not dark else 38/255,),dark=(dark,),pill=pill,labelPass=(labels,),pillBlur=(inner,)).items():uniform(compose,n,*v)
  if labels:sampler(compose,'selectedLabels',2,6)
  if inner:sampler(compose,'pillBackdrop',3,5)
  draw()
@@ -107,8 +108,8 @@ def glass(lens, gallery=False, layer_fade=0):
                  uNativeEdge=(float(lens and not dark),),uShapeData=(3,cx,cy,w,h,9999,9999)+(0,)*105).items():uniform(geometry,n,*v)
  draw()
  use(render,0 if lens else fbo[2]);blend(True)
- rgb=0 if gallery else dark if lens else 1-dark
- alpha=.4 if gallery else (38 if dark else 24)/255 if lens else (.4 if dark else 240/255)
+ rgb=0 if gallery else dark if lens else (1-dark)*(245/255 if translucent else 1)
+ alpha=.4 if gallery else (38 if dark else 24)/255 if lens else ((.4 if dark else .42) if translucent else 240/255)
  for n,v in dict(uSize=(W,H),uGeometryOffset=(cx-w/2,cy-h/2),uGeometrySize=(w,h),uGlassColor=(rgb,rgb,rgb,alpha),
                  uOpticalProps=(ri,ca,t,1),uLightConfig=(2 if lens else .25,0,1.5 if lens or gallery else 1),
                  uLightDirection=(-.7071068,.7071068),uWhiten=(0,),uWhitenGated=(1,),
@@ -140,7 +141,7 @@ for dark in (0,1):
   glass(lens)
   assert glGetError()==0
   frame=read()
-  actual=Path(f'compose/app/build/parity/agsl-{str(bool(dark)).lower()}-{str(bool(lens)).lower()}.rgba').read_bytes()
+  actual=Path(f'app/build/parity/agsl-{str(translucent).lower()}-{str(bool(dark)).lower()}-{str(bool(lens)).lower()}.rgba').read_bytes()
   differences=[]
   alpha_error=0
   for y in range(H):
@@ -155,8 +156,8 @@ for dark in (0,1):
   print(result)
   assert result['mean'] < .05 and result['p99'] <= 1 and result['max'] <= 16 and alpha_error <= 1, result
   results.append(result)
-  png(Path(f'compose/build/original-optics-{dark}-{lens}.png'),frame)
-Path('compose/build/glass-optics-comparison.json').write_text(json.dumps(results,indent=2))
+  png(Path(f'build/optics-{translucent}-{dark}-{lens}.png'),frame)
+Path(f'build/glass-optics-comparison-{translucent}.json').write_text(json.dumps(results,indent=2))
 
 
 # A lens over transparent pixels must approach zero in premultiplied color and alpha.

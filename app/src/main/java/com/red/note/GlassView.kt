@@ -31,6 +31,7 @@ internal class GlassView(context: Context) :
     private var bufferHeight = 0
     private var frostDirty = true
     private var frostDark = false
+    private var frostTranslucent = false
     @Volatile private var closed = false
     @Volatile
     var ready = false
@@ -234,6 +235,7 @@ internal class GlassView(context: Context) :
         generation: Int = surfaceGeneration,
         outputSize: androidx.compose.ui.unit.IntSize? = null,
         touch: Float = 0f,
+        translucent: Boolean = false,
         complete: (Boolean) -> Unit,
     ) {
         if (closed) {
@@ -267,8 +269,9 @@ internal class GlassView(context: Context) :
                     GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmap, 0)
                 }
                 upload(background, 0)
-                if (background != null || frostDark != dark) frostDirty = true
+                if (background != null || frostDark != dark || frostTranslucent != translucent) frostDirty = true
                 frostDark = dark
+                frostTranslucent = translucent
                 upload(labels, 1)
                 upload(selectedLabels, 6)
                 if (bufferWidth != w || bufferHeight != h) {
@@ -331,6 +334,7 @@ internal class GlassView(context: Context) :
                     uniform(p, "denseBlur", if (kind == 4) 1f else 0f)
                     uniform(p, "blurDirection", if (vertical) 0f else 1f, if (vertical) 1f else 0f)
                     uniform(p, "indicator", if (indicator) 1f - pressed else 0f)
+                    uniform(p, "indicatorAlpha", if (translucent && !dark) .08f else 38f / 255)
                     uniform(p, "pill", cx, hf / 2, lensWidth, lensHeight)
                     uniform(p, "labelPass", if (labelPass) 1f else 0f)
                     uniform(p, "pillBlur", pillBlur)
@@ -342,7 +346,7 @@ internal class GlassView(context: Context) :
                 GLES30.glDisable(GLES30.GL_BLEND)
                 val sigma =
                     if (kind == 4) 20 * density * w / (outputSize?.width ?: w)
-                    else (if (kind == 1) 2f else if (kind == 2) 2.5f else 1.5f) * density
+                    else (if (translucent && !dark && kind == 0) 4f else if (kind == 1) 2f else if (kind == 2) 2.5f else 1.5f) * density
                 composite(buffers[3], textures[0], false, sigma)
                 composite(buffers[1], textures[5], true, sigma, vertical = true)
                 if (kind == 4) {
@@ -402,7 +406,7 @@ internal class GlassView(context: Context) :
                         if (lens) {
                             if (dark) 1f else 0f
                         } else {
-                            if (kind == 1 || dark) 0f else 1f
+                            if (kind == 1 || dark) 0f else if (translucent && kind == 0) 245f / 255 else 1f
                         }
                     uniform(
                         p,
@@ -413,7 +417,8 @@ internal class GlassView(context: Context) :
                         (if (lens) {
                             if (dark) 38f / 255 else 24f / 255
                         } else {
-                            if (kind == 1 || dark) .4f else 240f / 255
+                            if (kind == 0) { if (translucent) { if (dark) .4f else .42f } else 240f / 255 }
+                            else if (kind == 1 || dark) .4f else 240f / 255
                         }) * fade,
                     )
                     uniform(p, "uOpticalProps", ri, ca, thickness, 1f)

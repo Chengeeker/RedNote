@@ -7,16 +7,21 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -272,11 +277,13 @@ internal fun NoteFeed(
     var page by memory::page
     var more by memory::more
     var busy by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     fun load(reset: Boolean = false) {
         if (busy) return
         busy = true
+        refreshing = reset
         error = ""
         scope.launch {
             try {
@@ -333,6 +340,7 @@ internal fun NoteFeed(
                 error = e.message ?: "加载失败"
             } finally {
                 busy = false
+                refreshing = false
             }
         }
     }
@@ -379,12 +387,28 @@ internal fun NoteFeed(
         }
     }
     LaunchedEffect(nearEnd, notes.size) { if (nearEnd && more && !busy && error.isEmpty()) load() }
+    val pullState = rememberPullToRefreshState()
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-        isRefreshing = busy && notes.isNotEmpty(),
+        isRefreshing = refreshing,
         onRefresh = { load(true) },
+        state = pullState,
+        modifier = Modifier.clipToBounds(),
+        indicator = {
+            PullToRefreshDefaults.Indicator(
+                isRefreshing = refreshing,
+                state = pullState,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = topPadding),
+            )
+        },
     ) {
         LazyVerticalGrid(
             GridCells.Fixed(columns),
+            modifier = Modifier.offset {
+                IntOffset(
+                    0,
+                    (pullState.distanceFraction * PullToRefreshDefaults.PositionalThreshold.toPx()).roundToInt(),
+                )
+            },
             state = grid,
             contentPadding =
                 PaddingValues(
@@ -781,11 +805,13 @@ internal fun JsonList(
     var page by memory::page
     var more by memory::more
     var busy by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
     fun load(reset: Boolean = false) {
         if (busy) return
         busy = true
+        refreshing = reset
         error = ""
         scope.launch {
             try {
@@ -816,6 +842,7 @@ internal fun JsonList(
                 error = e.message.orEmpty()
             } finally {
                 busy = false
+                refreshing = false
             }
         }
     }
@@ -868,6 +895,7 @@ internal fun JsonList(
             }
         }
     }
+    val pullState = rememberPullToRefreshState()
     if (embedded)
         Column {
             rows.forEach { row(it) }
@@ -875,10 +903,18 @@ internal fun JsonList(
         }
     else
         androidx.compose.material3.pulltorefresh.PullToRefreshBox(
-            busy && rows.isNotEmpty(),
-            { load(true) },
+            isRefreshing = refreshing,
+            onRefresh = { load(true) },
+            state = pullState,
+            modifier = Modifier.clipToBounds(),
         ) {
             LazyColumn(
+                modifier = Modifier.offset {
+                    IntOffset(
+                        0,
+                        (pullState.distanceFraction * PullToRefreshDefaults.PositionalThreshold.toPx()).roundToInt(),
+                    )
+                },
                 state = list,
                 contentPadding =
                     PaddingValues(

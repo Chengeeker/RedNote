@@ -2,7 +2,7 @@ param(
     [string]$JavaHome = $env:JAVA_HOME
 )
 $ErrorActionPreference = 'Stop'
-if (!$JavaHome) { throw 'Set JAVA_HOME to a JDK 17 installation or pass -JavaHome.' }
+if (!$JavaHome) { throw 'Set JAVA_HOME to a JDK 21 installation or pass -JavaHome.' }
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $properties = @{}
 Get-Content -LiteralPath (Join-Path $projectRoot 'key.properties') | ForEach-Object {

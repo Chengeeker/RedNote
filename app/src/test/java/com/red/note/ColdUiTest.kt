@@ -25,6 +25,57 @@ class ColdUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun weightSliderPreviewsBeforeSavingAndResetsToSystem() {
+        val app = RuntimeEnvironment.getApplication()
+        val state = RedState(app)
+        val prefs = state.preferences
+        prefs.set("fontScale", 1.0)
+        prefs.set("customWeight", true)
+        prefs.set("weightDelta", 100)
+        state.session = org.json.JSONObject().put("systemFontWeight", 150)
+        compose.setContent {
+            AppTheme(state) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                    PersonalizationContent(state)
+                }
+            }
+        }
+        val slider = compose.onNodeWithContentDescription("字体粗细").performScrollTo()
+        val preview = compose.onNode(hasText("这是一段用于预览字体粗细的示例文本", substring = true))
+        fun previewWeight(): Int {
+            val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            preview.performSemanticsAction(
+                androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult
+            ) { it(results) }
+            return results.single().layoutInput.style.fontWeight!!.weight
+        }
+        Assert.assertEquals(500, previewWeight())
+        slider.performTouchInput {
+            down(androidx.compose.ui.geometry.Offset(width * 2f / 3f, center.y))
+            moveTo(androidx.compose.ui.geometry.Offset(width - 1f, center.y), 100)
+        }
+        Assert.assertEquals(100, prefs.int("weightDelta"))
+        Assert.assertEquals(700, previewWeight())
+        slider.performTouchInput { up() }
+        compose.runOnIdle {
+            val restored = Preferences(app)
+            Assert.assertEquals(300, restored.int("weightDelta"))
+            Assert.assertTrue(restored.bool("customWeight"))
+        }
+        compose.onNodeWithText("选择字体粗细").assertDoesNotExist()
+        compose.onNodeWithText("重置").performClick()
+        Assert.assertFalse(prefs.bool("customWeight"))
+        Assert.assertEquals(300, prefs.int("weightDelta"))
+        Assert.assertEquals(550, previewWeight())
+        slider.performSemanticsAction(
+            androidx.compose.ui.semantics.SemanticsActions.SetProgress
+        ) { it(-300f) }
+        Assert.assertEquals(-300, Preferences(app).int("weightDelta"))
+        Assert.assertTrue(prefs.bool("customWeight"))
+        Assert.assertEquals(100, previewWeight())
+    }
+
+    @Test
     fun releasingWaterBeginsContractionImmediatelyAndFadesToRest() {
         val touching = mutableStateOf(true)
         var pressure = 0f
@@ -122,7 +173,7 @@ class ColdUiTest {
         compose.setContent {
             AppTheme(state) {
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    PersonalizationContent(state, "中等") {}
+                    PersonalizationContent(state)
                 }
             }
         }
@@ -166,11 +217,11 @@ class ColdUiTest {
         }
         val radio = style("浅色模式")
         val toggle = style("纯黑深色模式")
-        val row = style("自定义应用字体粗细")
+        val weightValue = style("中等")
         Assert.assertEquals(16f, radio.fontSize.value, .01f)
         Assert.assertEquals(radio.fontSize, toggle.fontSize)
         Assert.assertEquals(radio.fontWeight, toggle.fontWeight)
-        Assert.assertEquals(radio.fontWeight, row.fontWeight)
+        Assert.assertEquals(radio.fontWeight, weightValue.fontWeight)
         Assert.assertEquals(700, radio.fontWeight!!.weight)
         compose.onNodeWithText("明暗模式", useUnmergedTree = true).performScrollTo()
         compose.runOnUiThread {

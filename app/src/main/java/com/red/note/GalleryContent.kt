@@ -417,7 +417,7 @@ internal fun MediaBadge(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun GalleryControl(
+internal fun GalleryControl(
     state: RedState,
     icon: String,
     label: String,
@@ -510,34 +510,24 @@ private fun GalleryControl(
             },
             contentAlignment = Alignment.Center,
         ) {
-            if (!liquid)
-                Box(
-                    Modifier.size(44.dp)
-                        .glassEdgeShadow(
-                            GlassShadow(7f, 2f, Color.Black.copy(alpha = .20f)),
-                            GlassShadow(5f, -1f, Color.White.copy(alpha = .08f)),
-                        )
+            if (liquid) {
+                GlassDecoration(
+                    state,
+                    Modifier.fillMaxSize(),
+                    1,
+                    touch = press.coerceIn(0f, 1f),
                 )
-            GlassDecoration(
-                state,
-                Modifier.fillMaxSize(),
-                if (liquid) 1 else 2,
-                touch = if (liquid) press.coerceIn(0f, 1f) else 0f,
-            )
-            if (!liquid) {
+            } else {
+                val opacity by animateFloatAsState(
+                    if (down) .28f else .4f,
+                    tween(100, easing = LinearEasing),
+                    label = "gallery-control-opacity",
+                )
                 Box(
-                    Modifier.size(44.dp)
+                    Modifier.fillMaxSize()
                         .clip(CircleShape)
-                        .background(
-                            Brush.linearGradient(
-                                listOf(
-                                    Color(0xFFEeEeEe).copy(alpha = .30f),
-                                    Color(0xFF9e9e9e).copy(alpha = .20f),
-                                    Color(0xFF424242).copy(alpha = .36f),
-                                )
-                            )
-                        )
-                        .border(1.dp, Color.White.copy(alpha = .34f), CircleShape)
+                        .background(Color.Black.copy(alpha = opacity))
+                        .border(.5.dp, Color.White.copy(alpha = .24f), CircleShape)
                 )
             }
             Glyph(icon, null, 22.dp, Color.White.copy(alpha = if (enabled) 1f else .38f))

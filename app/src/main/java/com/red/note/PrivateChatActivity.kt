@@ -26,6 +26,16 @@ class PrivateChatActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = if (Build.VERSION.SDK_INT >= 26) android.graphics.Color.TRANSPARENT else android.graphics.Color.BLACK
+        @Suppress("DEPRECATION")
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         val chatId = intent.getStringExtra("id").orEmpty()
         if (!chatId.matches(Regex("[A-Za-z0-9_-]{1,128}"))) {
             finish()
@@ -38,21 +48,11 @@ class PrivateChatActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(background)
-            setOnApplyWindowInsetsListener { view, insets ->
-                val top = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    insets.getInsets(WindowInsets.Type.statusBars()).top
-                } else {
-                    @Suppress("DEPRECATION")
-                    insets.systemWindowInsetTop
-                }
-                val bottom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    insets.getInsets(WindowInsets.Type.navigationBars()).bottom
-                } else {
-                    @Suppress("DEPRECATION")
-                    insets.systemWindowInsetBottom
-                }
-                view.setPadding(0, top, 0, bottom)
-                insets
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val safe = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.displayCutout() or androidx.core.view.WindowInsetsCompat.Type.ime())
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+                androidx.core.view.WindowInsetsCompat.CONSUMED
             }
         }
         val bar = LinearLayout(this).apply {

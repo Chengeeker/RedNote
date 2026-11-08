@@ -79,13 +79,13 @@ internal fun navigationGlassMotion(
 @Composable
 internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Unit) {
     val backdrop = LocalGlassBackdrop.current ?: return
+    val translucent = state.preferences.bool("translucentNavigationGlass", false)
     val context = LocalContext.current
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
     val owner = LocalLifecycleOwner.current
-    var gpuFailed by remember { mutableStateOf(false) }
-    val gpu = android.os.Build.VERSION.SDK_INT >= 33 && !gpuFailed
-    val view = remember(gpu) { if (gpu) null else GlassView(context) }
+    val gpu = android.os.Build.VERSION.SDK_INT >= 33
+    val view = remember(gpu) { if (gpu) null else QweaNavigationView(context) }
     val crop = rememberGraphicsLayer()
     val labelsLayer = rememberGraphicsLayer()
     val selectedLayer = rememberGraphicsLayer()
@@ -132,6 +132,7 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
             unselectedColor,
             appFontScale,
             systemFontScale,
+            translucent,
         ) {
             var lastFrame = 0L
             var previousLens = latest[0]
@@ -204,7 +205,7 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
                         lensVelocity = lensVelocity,
                         selectedLabels = activeLabels,
                         generation = currentGeneration,
-                        outputSize = dimensions,
+                        translucent = translucent,
                     ) {
                         done.complete(it)
                     }
@@ -278,16 +279,16 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
                             )
                     )
                 if (gpu)
-                    GlassNavigationGpu(
+                    BackdropNavigation(
                         backdrop,
                         labelsLayer,
                         selectedLayer,
+                        translucent,
                         lens,
                         press,
                         dark,
                         sceneColor,
                         Modifier.fillMaxSize(),
-                        onFailure = { gpuFailed = true },
                     )
                 else if (view != null)
                     AndroidView(factory = { view }, modifier = Modifier.fillMaxSize())
@@ -298,8 +299,8 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
                         color = MaterialTheme.colorScheme.surfaceContainerHigh,
                         border =
                             BorderStroke(
-                                1.dp,
-                                MaterialTheme.colorScheme.outlineVariant.copy(alpha = .4f),
+                                if (dark) .75.dp else 1.dp,
+                                if (dark) Color.White.copy(alpha = .28f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = .4f),
                             ),
                     ) {}
                 GlassTabLabels(barWidth, labelNames, icons, unselectedColor, labelsLayer)
@@ -310,8 +311,9 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
                             val slot = (barWidth - 8.dp).toPx() / 3
                             val left = (24.dp).toPx() + selected * slot
                             drawRoundRect(
-                                if (dark) Color.White.copy(alpha = 38f / 255)
-                                else Color.Black.copy(alpha = 38f / 255),
+                                (if (dark) Color.White else Color.Black).copy(
+                                    alpha = if (translucent && !dark) .08f else 38f / 255
+                                ),
                                 topLeft = Offset(left, (19.dp).toPx()),
                                 size = androidx.compose.ui.geometry.Size(slot, 48.dp.toPx()),
                                 cornerRadius =

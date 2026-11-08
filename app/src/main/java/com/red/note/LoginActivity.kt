@@ -49,19 +49,25 @@ class LoginActivity: Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = if (Build.VERSION.SDK_INT >= 26) android.graphics.Color.TRANSPARENT else android.graphics.Color.BLACK
+        @Suppress("DEPRECATION")
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        if (Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+        androidx.core.view.WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = true
+            isAppearanceLightNavigationBars = true
+        }
         manualVerification = intent.getBooleanExtra("manual_verification", false)
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            fitsSystemWindows = true
-            setOnApplyWindowInsetsListener { view, insets ->
-                val topInset = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    insets.getInsets(WindowInsets.Type.statusBars()).top
-                } else {
-                    @Suppress("DEPRECATION")
-                    insets.systemWindowInsetTop
-                }
-                view.setPadding(0, topInset, 0, 0)
-                insets
+            setBackgroundColor(android.graphics.Color.WHITE)
+            androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(this) { view, insets ->
+                val safe = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                    androidx.core.view.WindowInsetsCompat.Type.displayCutout() or androidx.core.view.WindowInsetsCompat.Type.ime())
+                view.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+                androidx.core.view.WindowInsetsCompat.CONSUMED
             }
         }
         val bar = LinearLayout(this)
