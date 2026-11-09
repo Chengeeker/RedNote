@@ -34,7 +34,7 @@ class GalleryControlTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
-    fun plainGalleryButtonsKeepTheirShapeAndOnlyChangeOpacity() {
+    fun flutterGalleryButtonsKeepTheTintAndTouchTargetDuringPress() {
         val state = RedState(RuntimeEnvironment.getApplication())
         state.preferences.set("liquidGlass", false)
         state.preferences.set("theme", 2)
@@ -63,7 +63,8 @@ class GalleryControlTest {
                 }
             }
         }
-        fun assertStripes(label: String, brightness: Int) {
+        val baseline = mutableMapOf<String, List<Int>>()
+        fun assertStripes(label: String) {
             val node = compose.onNodeWithContentDescription(label)
             val bounds = node.fetchSemanticsNode().boundsInRoot
             assertEquals(48f, bounds.width, .01f)
@@ -77,18 +78,15 @@ class GalleryControlTest {
                 val frame = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
                 try {
                     view.draw(AndroidCanvas(frame))
-                    java.io.File("build/parity/gallery-plain-${android.os.Build.VERSION.SDK_INT}-$label-$brightness.png")
+                    java.io.File("build/parity/gallery-plain-${android.os.Build.VERSION.SDK_INT}-$label.png")
                         .apply { parentFile.mkdirs() }
                         .outputStream().use { frame.compress(Bitmap.CompressFormat.PNG, 100, it) }
-                    for (x in 12..35) {
-                        val color = frame.getPixel(bounds.left.toInt() + x, bounds.top.toInt() + 8)
-                        val expected = if (x / 4 % 2 == 0) android.graphics.Color.RED else android.graphics.Color.BLUE
-                        val red = if (expected == android.graphics.Color.RED) brightness else 0
-                        val blue = if (expected == android.graphics.Color.BLUE) brightness else 0
-                        assertTrue("$label x=$x red=$red actual=${android.graphics.Color.red(color)}", abs(red - android.graphics.Color.red(color)) <= 2)
-                        assertEquals(0, android.graphics.Color.green(color))
-                        assertTrue("$label x=$x blue=$blue actual=${android.graphics.Color.blue(color)}", abs(blue - android.graphics.Color.blue(color)) <= 2)
-                    }
+                    val pixels = (12..35).map { x -> frame.getPixel(bounds.left.toInt() + x, bounds.top.toInt() + 8) }
+                    assertTrue("visible gray tint over the source", pixels.all { android.graphics.Color.green(it) > 0 })
+                    assertTrue("source remains visible through the tint", pixels.any { android.graphics.Color.red(it) > android.graphics.Color.blue(it) }
+                        && pixels.any { android.graphics.Color.blue(it) > android.graphics.Color.red(it) })
+                    val first = baseline.putIfAbsent(label, pixels)
+                    if (first != null) assertEquals("pressing does not change the tint or geometry", first, pixels)
                 } finally {
                     frame.recycle()
                 }
@@ -97,19 +95,19 @@ class GalleryControlTest {
         for (label in listOf("返回", "保存图片")) {
             val button = compose.onNodeWithContentDescription(label)
             val bounds = button.fetchSemanticsNode().boundsInRoot
-            assertStripes(label, 153)
+            assertStripes(label)
             compose.mainClock.autoAdvance = false
             button.performTouchInput { down(center) }
             compose.waitForIdle()
             compose.mainClock.advanceTimeByFrame()
             compose.mainClock.advanceTimeBy(120)
-            assertStripes(label, 184)
+            assertStripes(label)
             assertEquals(bounds, button.fetchSemanticsNode().boundsInRoot)
             button.performTouchInput { up() }
             compose.waitForIdle()
             compose.mainClock.advanceTimeByFrame()
             compose.mainClock.advanceTimeBy(120)
-            assertStripes(label, 153)
+            assertStripes(label)
             compose.mainClock.autoAdvance = true
         }
         assertEquals(1, returned)
@@ -120,8 +118,8 @@ class GalleryControlTest {
         }
         compose.onNodeWithContentDescription("返回").assertIsNotEnabled().performTouchInput { click() }
         compose.onNodeWithContentDescription("保存图片").assertIsNotEnabled().performTouchInput { click() }
-        assertStripes("返回", 153)
-        assertStripes("保存图片", 153)
+        assertStripes("返回")
+        assertStripes("保存图片")
         assertEquals(1, returned)
         assertEquals(1, saved)
     }

@@ -3,8 +3,6 @@
 package com.red.note
 
 import android.graphics.Bitmap
-import android.view.MotionEvent
-import android.view.VelocityTracker
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -20,7 +18,10 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.layout.*
 import androidx.compose.ui.platform.*
 import androidx.compose.ui.semantics.*
@@ -96,7 +97,6 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
         else MaterialTheme.colorScheme.onSurfaceVariant
     val appFontScale = LocalAppFontScale.current
     val systemFontScale = LocalSystemDensity.current?.fontScale
-    val scope = rememberCoroutineScope()
     var failed by remember { mutableStateOf(false) }
     var visible by remember { mutableStateOf(false) }
     var position by remember { mutableStateOf(Offset.Zero) }
@@ -109,6 +109,7 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
     val dark = MaterialTheme.colorScheme.surface.luminance() < .5f
     val rootView = LocalView.current
     val onChoose by rememberUpdatedState(choose)
+    val currentSelected by rememberUpdatedState(selected)
     val latest by rememberUpdatedState(listOf(lens, press, if (dark) 1f else 0f))
     val labelNames = listOf("发现", "消息", "我的")
     val icons = listOf("home_outlined", "chat_bubble_outline_rounded", "person_outline")
@@ -237,16 +238,6 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
             }
         }
     }
-    var origin by remember { mutableStateOf(Offset.Zero) }
-    var vertical by remember { mutableStateOf(false) }
-    var velocity by remember { mutableStateOf<VelocityTracker?>(null) }
-    var hold by remember { mutableStateOf<Job?>(null) }
-    DisposableEffect(Unit) {
-        onDispose {
-            hold?.cancel()
-            velocity?.recycle()
-        }
-    }
     BoxWithConstraints(
         Modifier.fillMaxWidth()
             .padding(
@@ -327,80 +318,76 @@ internal fun GlassNavigation(state: RedState, selected: Int, choose: (Int) -> Un
                 }
             }
             Row(
-                Modifier.fillMaxSize().pointerInteropFilter { event ->
-                    val x = event.x
-                    val y = event.y
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> {
-                            dragging = false
-                            longPressed = false
-                            hold?.cancel()
-                            velocity?.recycle()
-                            velocity = VelocityTracker.obtain().also { it.addMovement(event) }
-                            origin = Offset(x, y)
-                            vertical = false
+                Modifier.fillMaxSize().pointerInput(density.density) {
+                    coroutineScope {
+                        val gestureScope = this
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            val tracker = VelocityTracker()
+                            tracker.addPosition(down.uptimeMillis, down.position)
+                            var vertical = false
+                            var cancelled = false
                             touching = true
-                            target =
-                                (x / (barWidth.value * density.density) * 3 - .5f).coerceIn(0f, 2f)
-                            hold =
-                                scope.launch {
-                                    delay(220)
-                                    longPressed = true
-                                    dragging = true
-                                    if (state.preferences.bool("haptics", true))
-                                        rootView.performHapticFeedback(
-                                            android.view.HapticFeedbackConstants.LONG_PRESS
-                                        )
-                                }
-                        }
-                        MotionEvent.ACTION_MOVE -> {
-                            velocity?.addMovement(event)
-                            val dx = x - origin.x
-                            val dy = y - origin.y
-                            if (hypot(dx, dy) > 18 * density.density) {
-                                hold?.cancel()
-                                if (abs(dx) > abs(dy)) dragging = true
-                                else if (!dragging) vertical = true
-                            }
-                            if (!vertical)
-                                target =
-                                    (x / (barWidth.value * density.density) * 3 - .5f).coerceIn(
-                                        0f,
-                                        2f,
-                                    )
-                        }
-                        MotionEvent.ACTION_UP,
-                        MotionEvent.ACTION_CANCEL -> {
-                            hold?.cancel()
-                            val wasDragging = dragging
-                            touching = false
-                            velocity?.addMovement(event)
-                            velocity?.computeCurrentVelocity(1000)
-                            val speed = (velocity?.xVelocity ?: 0f) / density.density
-                            val slot =
-                                floor(x / (barWidth.value * density.density) * 3)
-                                    .toInt()
-                                    .coerceIn(0, 2)
-                            if (event.actionMasked == MotionEvent.ACTION_UP && !vertical) {
-                                val chosen =
-                                    if (wasDragging && abs(speed) >= 800 && slot == selected)
-                                        (selected + if (speed > 0) 1 else -1).coerceIn(0, 2)
-                                    else slot
-                                if (!wasDragging || chosen != selected) {
-                                    if (state.preferences.bool("haptics", true))
-                                        rootView.performHapticFeedback(
-                                            android.view.HapticFeedbackConstants.CLOCK_TICK
-                                        )
-                                    onChoose(chosen)
-                                }
-                            }
-                            velocity?.recycle()
-                            velocity = null
                             dragging = false
                             longPressed = false
+                            target = (down.position.x / size.width * 3 - .5f).coerceIn(0f, 2f)
+                            val hold = gestureScope.launch {
+                                delay(220)
+                                longPressed = true
+                                dragging = true
+                                if (state.preferences.bool("haptics", true))
+                                    rootView.performHapticFeedback(
+                                        android.view.HapticFeedbackConstants.LONG_PRESS
+                                    )
+                            }
+                            down.consume()
+                            try {
+                                var releasedAt = down.position
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id }
+                                    if (change == null || change.isConsumed ||
+                                        event.changes.any { it.id != down.id && it.pressed }) {
+                                        cancelled = true
+                                        break
+                                    }
+                                    tracker.addPosition(change.uptimeMillis, change.position)
+                                    val delta = change.position - down.position
+                                    if (delta.getDistance() > 18 * density.density) {
+                                        hold.cancel()
+                                        if (abs(delta.x) > abs(delta.y)) dragging = true
+                                        else if (!dragging) vertical = true
+                                    }
+                                    if (!vertical)
+                                        target = (change.position.x / size.width * 3 - .5f).coerceIn(0f, 2f)
+                                    releasedAt = change.position
+                                    change.consume()
+                                    if (!change.pressed) break
+                                }
+                                if (!cancelled && !vertical) {
+                                    val speed = tracker.calculateVelocity().x / density.density
+                                    val slot = floor(releasedAt.x / size.width * 3).toInt().coerceIn(0, 2)
+                                    val selectedNow = currentSelected
+                                    val chosen =
+                                        if (dragging && abs(speed) >= 800 && slot == selectedNow)
+                                            (selectedNow + if (speed > 0) 1 else -1).coerceIn(0, 2)
+                                        else slot
+                                    if (!dragging || chosen != selectedNow) {
+                                        if (state.preferences.bool("haptics", true))
+                                            rootView.performHapticFeedback(
+                                                android.view.HapticFeedbackConstants.CLOCK_TICK
+                                            )
+                                        onChoose(chosen)
+                                    }
+                                }
+                            } finally {
+                                hold.cancel()
+                                touching = false
+                                dragging = false
+                                longPressed = false
+                            }
                         }
                     }
-                    true
                 }
             ) {
                 labelNames.forEachIndexed { i, label ->

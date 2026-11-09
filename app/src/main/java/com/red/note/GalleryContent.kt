@@ -264,7 +264,7 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                         thumbnails,
                         Modifier.align(Alignment.BottomCenter)
                             .navigationBarsPadding()
-                            .padding(start = 12.dp, end = 12.dp, bottom = 32.dp)
+                            .padding(bottom = 32.dp).fillMaxWidth()
                             .height(64.dp)
                             .graphicsLayer { alpha = thumbnailOpacity },
                         flingBehavior =
@@ -275,8 +275,8 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                                 snapAnimationSpec =
                                     tween(120, easing = CubicBezierEasing(.215f, .61f, .355f, 1f)),
                             ),
-                        pageSize = PageSize.Fixed((width - 24.dp) * .16f),
-                        contentPadding = PaddingValues(horizontal = (width - 24.dp) * .42f),
+                        pageSize = PageSize.Fixed(width * .16f),
+                        contentPadding = PaddingValues(horizontal = width * .42f),
                         beyondViewportPageCount = 3,
                     ) { index ->
                         Box(
@@ -306,7 +306,7 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                             Picture(
                                 page.previews.getOrElse(index) { page.urls[index] },
                                 null,
-                                Modifier.fillMaxSize(),
+                                Modifier.fillMaxSize().padding(2.dp).clip(RoundedCornerShape(6.dp)),
                             )
                             if (index != pager.currentPage)
                                 Box(
@@ -518,19 +518,9 @@ internal fun GalleryControl(
                     touch = press.coerceIn(0f, 1f),
                 )
             } else {
-                val opacity by animateFloatAsState(
-                    if (down) .28f else .4f,
-                    tween(100, easing = LinearEasing),
-                    label = "gallery-control-opacity",
-                )
-                Box(
-                    Modifier.fillMaxSize()
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = opacity))
-                        .border(.5.dp, Color.White.copy(alpha = .24f), CircleShape)
-                )
+                FlutterGallerySurface()
             }
-            Glyph(icon, null, 22.dp, Color.White.copy(alpha = if (enabled) 1f else .38f))
+            Glyph(icon, null, if (liquid) 22.dp else 24.dp, Color.White.copy(alpha = if (enabled) 1f else .38f))
         }
     }
 }

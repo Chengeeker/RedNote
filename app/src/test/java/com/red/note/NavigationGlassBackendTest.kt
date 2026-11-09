@@ -31,6 +31,78 @@ class NavigationGlassBackendTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
     @Test
+    fun waterRetractsWhenItsFingerLiftsWhileAnotherFingerScrollsThePage() {
+        val state = RedState(org.robolectric.RuntimeEnvironment.getApplication())
+        state.preferences.set("haptics", false)
+        var selected by mutableIntStateOf(0)
+        compose.setContent {
+            AppTheme(state) {
+                val layer = rememberGraphicsLayer()
+                val backdrop = remember(layer) { GlassBackdrop(layer) }
+                Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().recordGlassBackdrop(backdrop).background(Color.Blue))
+                    CompositionLocalProvider(LocalGlassBackdrop provides backdrop) {
+                        Box(Modifier.align(androidx.compose.ui.Alignment.BottomCenter)) {
+                            GlassNavigation(state, selected) { selected = it }
+                        }
+                    }
+                }
+            }
+        }
+        compose.mainClock.autoAdvance = false
+        fun settle() {
+            repeat(25) {
+                compose.mainClock.advanceTimeByFrame()
+                compose.waitForIdle()
+            }
+        }
+        fun pixels(): IntArray = compose.runOnUiThread {
+            val view = compose.activity.findViewById<View>(android.R.id.content)
+            val frame = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            try {
+                val canvas = Canvas(frame)
+                org.robolectric.util.ReflectionHelpers.callInstanceMethod<Unit>(
+                    canvas, "setHwFeaturesInSwModeEnabled",
+                    org.robolectric.util.ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType, true),
+                )
+                view.draw(canvas)
+                IntArray(frame.width * frame.height).also {
+                    frame.getPixels(it, 0, frame.width, 0, 0, frame.width, frame.height)
+                }
+            } finally { frame.recycle() }
+        }
+        settle()
+        pixels()
+        settle()
+        val resting = pixels()
+        val button = compose.onNodeWithContentDescription("消息").fetchSemanticsNode().boundsInRoot.center
+        compose.onRoot().performTouchInput { down(0, button) }
+        compose.mainClock.advanceTimeBy(230)
+        settle()
+        assertFalse("fixture must actually show the held water", resting.contentEquals(pixels()))
+        compose.onRoot().performTouchInput {
+            down(1, androidx.compose.ui.geometry.Offset(20f, 200f))
+            moveTo(1, androidx.compose.ui.geometry.Offset(20f, 100f), 80)
+            up(0)
+            moveTo(1, androidx.compose.ui.geometry.Offset(20f, 50f), 80)
+        }
+        settle()
+        val releasedBeforePageFinger = pixels()
+        compose.onRoot().performTouchInput { up(1) }
+        settle()
+        assertArrayEquals("water must already be gone before the page finger lifts", pixels(), releasedBeforePageFinger)
+
+        val beforeCancel = pixels()
+        compose.onRoot().performTouchInput { down(0, button) }
+        compose.mainClock.advanceTimeBy(230)
+        settle()
+        assertFalse(beforeCancel.contentEquals(pixels()))
+        compose.onRoot().performTouchInput { cancel() }
+        settle()
+        assertArrayEquals(beforeCancel, pixels())
+    }
+
+    @Test
     fun composeBackdropSeparatesDarkMaterialsAndCanSwitchBack() {
         var clear by mutableStateOf(false)
         var dark by mutableStateOf(true)

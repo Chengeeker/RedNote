@@ -170,8 +170,10 @@ class ColdUiTest {
         state.preferences.set("fontScale", 1.0)
         state.preferences.set("customWeight", true)
         state.preferences.set("weightDelta", 100)
+        var primary = androidx.compose.ui.graphics.Color.Unspecified
         compose.setContent {
             AppTheme(state) {
+                primary = androidx.compose.material3.MaterialTheme.colorScheme.primary
                 Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
                     PersonalizationContent(state)
                 }
@@ -214,6 +216,9 @@ class ColdUiTest {
                 it(results)
             }
             return results.single().layoutInput.style
+        }
+        listOf("明暗模式", "色彩方案", "字体粗细", "字体大小", "底部导航", "显示效果", "触感与震动").forEach {
+            Assert.assertEquals("$it follows the current theme color", primary, style(it).color)
         }
         val radio = style("浅色模式")
         val toggle = style("纯黑深色模式")

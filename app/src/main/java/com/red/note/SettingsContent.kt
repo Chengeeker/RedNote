@@ -50,8 +50,7 @@ private fun Section(
             Modifier.fillMaxWidth().testTag("settings-card:$title"),
             shape = RoundedCornerShape(24.dp),
             color =
-                if (scheme.surface == Color.Black) scheme.surfaceContainer
-                else scheme.surfaceContainerLow,
+                scheme.settingsCardColor(LocalScaffoldColor.current),
         ) {
             Column {
                 if (!outside && title.isNotEmpty())
@@ -490,176 +489,28 @@ internal fun PersonalizationContent(state: RedState) {
     val p = state.preferences
     val translucent = p.bool("translucentNavigationGlass", false)
     Column {
-        Section("明暗模式") {
-            listOf("跟随系统", "浅色模式", "深色模式").forEachIndexed { i, label ->
-                OriginalListItem(
-                    headlineContent = { Text(label, style = MaterialTheme.typography.titleMedium) },
-                    leadingContent = { RadioButton(p.int("theme") == i, null) },
-                    modifier = Modifier.clickable { p.set("theme", i) },
-                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                )
-            }
-            SettingToggle(state, "纯黑深色模式", "pureBlack", "contrast_rounded")
-        }
+        AppearanceModes(p.int("theme"), { p.set("theme", it) }, p.bool("pureBlack"), { p.set("pureBlack", it) })
         Spacer(Modifier.height(16.dp))
-        Section("色彩方案") {
-            val dynamicAvailable = android.os.Build.VERSION.SDK_INT >= 31
-            SettingToggle(
-                state,
-                "动态取色",
-                "dynamicColor",
-                "auto_awesome_outlined",
-                enabled = dynamicAvailable,
-            )
-            if (!dynamicAvailable || !p.bool("dynamicColor")) {
-                Text(
-                    "Material 3 预置主题色",
-                    Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 2.dp),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                FlowRow(
-                    Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    listOf("经典红", "活力橙", "极光蓝", "翡翠绿", "优雅紫", "樱花粉", "青碧色", "经典黑灰")
-                        .forEachIndexed { i, label ->
-                            FilterChip(
-                                p.int("color") == i,
-                                tapAction { p.set("color", i) },
-                                label = { Text(label) },
-                                leadingIcon = {
-                                    Box(
-                                        Modifier.size(20.dp)
-                                            .background(
-                                                Color(
-                                                    listOf(
-                                                        0xFFFA2F3A,
-                                                        0xFFFF8200,
-                                                        0xFF1976D2,
-                                                        0xFF2E7D32,
-                                                        0xFF7B1FA2,
-                                                        0xFFE91E63,
-                                                        0xFF00897B,
-                                                        0xFF455A64,
-                                                    )[i]
-                                                ),
-                                                CircleShape,
-                                            )
-                                    )
-                                },
-                            )
-                        }
-                }
-            }
-        }
+        AppearancePalette(p.bool("dynamicColor"), { p.set("dynamicColor", it) }, p.int("color"), { p.set("color", it) })
         Spacer(Modifier.height(16.dp))
-        Section("字体粗细") {
-            val customWeight = p.bool("customWeight")
-            val committedDelta = if (customWeight) p.int("weightDelta").coerceIn(-300, 300)
-                else state.session.optInt("systemFontWeight")
-            var weight by remember(p.revision, committedDelta) {
-                mutableFloatStateOf(committedDelta.toFloat().coerceIn(-300f, 300f))
-            }
-            val weightLabel = if (!customWeight && weight == committedDelta.toFloat()) "跟随系统"
-                else listOf("极细", "细", "偏细", "默认", "中等", "偏粗", "加粗")[
-                    ((weight + 300) / 100).roundToInt().coerceIn(0, 6)
-                ]
-            Row(
-                Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Glyph("format_bold_rounded", tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(weightLabel, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                        TextButton(
-                            onClick = tapAction { p.set("customWeight", false) },
-                            enabled = customWeight,
-                        ) { Text("重置") }
-                    }
-                    Slider(
-                        value = weight,
-                        onValueChange = { weight = it },
-                        modifier = Modifier.semantics { contentDescription = "字体粗细" },
-                        valueRange = -300f..300f,
-                        steps = 5,
-                        onValueChangeFinished = {
-                            p.set("weightDelta", weight.roundToInt())
-                            p.set("customWeight", true)
-                        },
-                    )
-                }
-            }
-            Column(
-                Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 14.dp)
-                    .background(
-                        MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = .3f),
-                        RoundedCornerShape(12.dp),
-                    )
-                    .padding(12.dp)
-            ) {
-                Text(
-                    "效果预览 ($weightLabel)",
-                    style = MaterialTheme.typography.titleSmall.copy(fontSize = 11.5.sp),
-                    color = MaterialTheme.colorScheme.primary,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "RedNote 极简现代体验：这是一段用于预览字体粗细的示例文本。@开发者 #话题#",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        lineHeight = 19.6.sp,
-                        fontWeight = FontWeight(
-                            ((MaterialTheme.typography.bodyMedium.fontWeight?.weight ?: 400) -
-                                committedDelta + weight.roundToInt()).coerceIn(100, 900)
-                        ),
-                    ),
-                )
-            }
-        }
+        FontWeightSetting(p.bool("customWeight"), p.int("weightDelta"), "RedNote",
+            fontScale = appTextSize(14.sp).value / 14f, systemDelta = state.session.optInt("systemFontWeight"),
+            hapticsEnabled = p.bool("haptics", true), onReset = { p.set("customWeight", false) },
+            onCommit = { p.set("weightDelta", it); p.set("customWeight", true) })
         Spacer(Modifier.height(16.dp))
-        Section("字体大小") {
-            var scale by
-                remember(p.revision) { mutableFloatStateOf(p.number("fontScale").toFloat()) }
-            Row(
-                Modifier.fillMaxWidth().padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Glyph("format_size_rounded", tint = MaterialTheme.colorScheme.primary)
-                Spacer(Modifier.width(16.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("${(scale*100).toInt()}%", style = MaterialTheme.typography.titleMedium)
-                    Slider(
-                        scale,
-                        { scale = it },
-                        modifier = Modifier.semantics { contentDescription = "字体大小" },
-                        valueRange = .85f..1.5f,
-                        steps = 12,
-                        onValueChangeFinished = { p.set("fontScale", scale.toDouble()) },
-                    )
-                }
-            }
-        }
+        FontSizeSetting(p.number("fontScale").toFloat(), fontScale = appTextSize(16.sp).value / 16f) { p.set("fontScale", it.toDouble()) }
         Spacer(Modifier.height(16.dp))
-        Section("底部导航") { SettingToggle(state, "使用悬浮底栏", "floating", "dock_rounded", true) }
+        AppearanceSection("底部导航") { AppearanceToggle("使用悬浮底栏", "dock", p.bool("floating", true), "居中显示悬浮式导航栏") { p.set("floating", it) } }
         Spacer(Modifier.height(16.dp))
-        Section("显示效果") {
-            SettingToggle(
-                state,
-                "使用液态玻璃效果",
-                "liquidGlass",
-                "blur_on_rounded",
-                false,
-                "用于悬浮底栏和图库操作按钮",
-            )
+        AppearanceSection("显示效果") {
+            AppearanceToggle("使用液态玻璃效果", "blur_on", p.bool("liquidGlass"), "用于悬浮底栏和图库操作按钮") { p.set("liquidGlass", it) }
             if (p.bool("liquidGlass") && p.bool("floating", true)) {
                 NavigationGlassChoice(translucent, fontScale = appTextSize(14.sp).value / 14f,
                     hapticsEnabled = p.bool("haptics", true)) { p.set("translucentNavigationGlass", it) }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Section("触感与震动") { SettingToggle(state, "触感与震动反馈", "haptics", "vibration_rounded", true) }
+        AppearanceSection("触感与震动") { AppearanceToggle("触感与震动反馈", "vibration", p.bool("haptics", true)) { p.set("haptics", it) } }
     }
 
 }

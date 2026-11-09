@@ -69,6 +69,13 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
     val insets = remember { WindowCompat.getInsetsController(window, window.decorView) }
     val sourceList =
         remember(note) { videoStreams(note.raw.optJSONObject("video") ?: org.json.JSONObject()) }
+    val qualityOptions = remember(sourceList) {
+        val renditions = sourceList.filterNot { it.original }
+        if (sourceList.any { original -> original.original && renditions.any { it.url != original.url } })
+            linkedMapOf("auto" to "自动（HDR 优先）", "sdr" to "兼容画质（节省流量）", "original" to "原画（流量较大）")
+        else emptyMap()
+    }
+    var resumePlaying by remember { mutableStateOf(true) }
     var quality by rememberSaveable { mutableStateOf("auto") }
     var attempts by remember { mutableStateOf(emptyList<VideoStream>()) }
     var attempt by remember { mutableIntStateOf(0) }
@@ -236,7 +243,7 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
         player.setPlaybackSpeed(speed)
         player.seekTo(resumePosition)
         player.prepare()
-        player.playWhenReady = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
+        player.playWhenReady = resumePlaying && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
         if (Build.VERSION.SDK_INT >= 26)
             window.colorMode =
                 if (hdrSupported && (stream.hdr || stream.original)) ActivityInfo.COLOR_MODE_HDR
@@ -443,207 +450,30 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                     )
                 ),
         ) {
-            CompositionLocalProvider(LocalContentColor provides Color.White) {
-                Column(Modifier.fillMaxSize()) {
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Black.copy(alpha = .87f), Color.Transparent)
-                                )
-                            )
-                            .statusBarsPadding(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        GlyphButton("arrow_back_rounded", "返回", action = back)
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                note.title.ifEmpty { "视频播放" },
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 1,
-                            )
-                            if (note.author.isNotEmpty())
-                                Text(
-                                    note.author,
-                                    fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = .7f),
-                                    maxLines = 1,
-                                )
-                        }
-                        if (sourceList.any { it.original })
-                            Box {
-                                GlyphButton("high_quality_outlined", "画质") { qualityPicker = true }
-                                DropdownMenu(qualityPicker, { qualityPicker = false }) {
-                                    listOf(
-                                            "auto" to "自动（HDR 优先）",
-                                            "sdr" to "兼容画质（节省流量）",
-                                            "original" to "原画（流量较大）",
-                                        )
-                                        .forEach { (value, label) ->
-                                            DropdownMenuItem(
-                                                text = { Text(label) },
-                                                onClick =
-                                                    tapAction {
-                                                        qualityPicker = false
-                                                        resumePosition = player.currentPosition
-                                                        quality = value
-                                                    },
-                                            )
-                                        }
-                                }
-                            }
-                        GlyphButton(
-                            "download_rounded",
-                            "保存视频",
-                            !activity.saving && attempts.isNotEmpty(),
-                        ) {
-                            attempts.getOrNull(attempt)?.let {
-                                activity.saveMedia(it.url, true, note.author, it.audio)
-                            }
-                        }
-                        GlyphButton("speed_rounded", "播放倍速") { speedPicker = true }
-                        GlyphButton(
-                            if (landscape) "fullscreen_exit_rounded" else "fullscreen_rounded",
-                            "全屏旋转",
-                        ) {
-                            rotate()
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    Column(
-                        Modifier.background(
-                                Brush.verticalGradient(
-                                    listOf(Color.Transparent, Color.Black.copy(alpha = .87f))
-                                )
-                            )
-                            .navigationBarsPadding()
-                            .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)
-                    ) {
-                        Slider(
-                            position.coerceIn(0, duration).toFloat(),
-                            {
-                                player.seekTo(it.toLong())
-                                position = it.toLong()
-                                touch()
-                            },
-                            modifier = Modifier.height(48.dp),
-                            valueRange = 0f..duration.coerceAtLeast(1).toFloat(),
-                            thumb = {
-                                Box(Modifier.size(13.dp).background(Color.White, CircleShape))
-                            },
-                            track = { slider ->
-                                val primary = MaterialTheme.colorScheme.primary
-                                Canvas(Modifier.fillMaxWidth().height(3.5.dp)) {
-                                    val y = size.height / 2
-                                    drawLine(
-                                        Color.White.copy(alpha = .24f),
-                                        androidx.compose.ui.geometry.Offset(0f, y),
-                                        androidx.compose.ui.geometry.Offset(size.width, y),
-                                        size.height,
-                                        androidx.compose.ui.graphics.StrokeCap.Round,
-                                    )
-                                    drawLine(
-                                        primary,
-                                        androidx.compose.ui.geometry.Offset(0f, y),
-                                        androidx.compose.ui.geometry.Offset(
-                                            size.width *
-                                                (slider.value / slider.valueRange.endInclusive)
-                                                    .coerceIn(0f, 1f),
-                                            y,
-                                        ),
-                                        size.height,
-                                        androidx.compose.ui.graphics.StrokeCap.Round,
-                                    )
-                                }
-                            },
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = tapAction { pausePlay() }) {
-                                Glyph(
-                                    if (playing) "pause_rounded" else "play_arrow_rounded",
-                                    if (playing) "暂停" else "播放",
-                                    30.dp,
-                                    Color.White,
-                                )
-                            }
-                            Text(
-                                "${durationText(position)} / ${durationText(duration)}",
-                                fontSize = 13.sp,
-                                color = Color.White.copy(alpha = .7f),
-                                style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum"),
-                            )
-                            Spacer(Modifier.weight(1f))
-                            Text(
-                                "${speed}x",
-                                Modifier.background(
-                                        Color.White.copy(alpha = .12f),
-                                        RoundedCornerShape(4.dp),
-                                    )
-                                    .clickable { speedPicker = true }
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                                color = Color.White,
-                                fontSize = 12.sp,
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            IconButton(onClick = tapAction { rotate() }) {
-                                Glyph(
-                                    if (landscape) "screen_lock_rotation_rounded"
-                                    else "screen_rotation_rounded",
-                                    "旋转屏幕",
-                                    20.dp,
-                                    Color.White,
-                                )
-                            }
-                        }
+            Box(Modifier.fillMaxSize()) {
+                ReviewVideoTop(Modifier.align(Alignment.TopCenter), note.title, note.author, landscape,
+                    close = { if (landscape) rotate() else back() }) {
+                    ReviewVideoAction("download", "保存视频", enabled = !activity.saving && attempts.isNotEmpty(), busy = activity.saving) {
+                        attempts.getOrNull(attempt)?.let { activity.saveMedia(it.url, true, note.author, it.audio) }
                     }
                 }
+                ReviewVideoBottom(Modifier.align(Alignment.BottomCenter), position, duration, player.bufferedPosition.coerceAtLeast(0),
+                    playing, speed, landscape, enabled = ready, quality = qualityOptions[quality]?.substringBefore("（"),
+                    onPlay = ::pausePlay, onSpeed = { speedPicker = true; touch() }, onQuality = { qualityPicker = true; touch() },
+                    onFullscreen = ::rotate, onSeek = { player.seekTo(it); position = it; touch() })
             }
         }
     }
-    if (speedPicker)
-        ModalBottomSheet(
-            onDismissRequest = { speedPicker = false },
-            containerColor = Color.Black.copy(alpha = .87f),
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-        ) {
-            Column(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(vertical = 16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text("播放倍速", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                Spacer(Modifier.height(12.dp))
-                FlowRow(
-                    horizontalArrangement =
-                        Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f, 3f).forEach { value ->
-                        FilterChip(
-                            speed == value,
-                            {
-                                speed = value
-                                player.setPlaybackSpeed(value)
-                                speedPicker = false
-                                touch()
-                            },
-                            label = {
-                                Text(
-                                    "${value}x",
-                                    fontWeight =
-                                        if (speed == value) FontWeight.Bold else FontWeight.Normal,
-                                )
-                            },
-                            colors =
-                                FilterChipDefaults.filterChipColors(
-                                    containerColor = Color.White.copy(alpha = .12f),
-                                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                                    labelColor = Color.White.copy(alpha = .7f),
-                                    selectedLabelColor = Color.White,
-                                ),
-                        )
-                    }
-                }
+    if (speedPicker) ReviewVideoChoices("播放倍速", standardVideoSpeeds.map { "${it}X" }, "${speed}X", { speedPicker = false; touch() }) {
+        speed = it.removeSuffix("X").toFloat()
+        player.setPlaybackSpeed(speed)
+    }
+    if (qualityPicker && qualityOptions.size > 1)
+        ReviewVideoChoices("清晰度选择", qualityOptions.values.toList(), qualityOptions[quality].orEmpty(), { qualityPicker = false; touch() }) { label ->
+            qualityOptions.entries.firstOrNull { it.value == label }?.key?.takeIf { it != quality }?.let {
+                resumePosition = player.currentPosition
+                resumePlaying = player.playWhenReady
+                quality = it
             }
         }
 }

@@ -324,8 +324,11 @@ internal fun AppTheme(state: RedState, content: @Composable () -> Unit) {
             error = c("error"),
             onError = c("onError"),
         )
-    if (p.bool("dynamicColor") && Build.VERSION.SDK_INT >= 31)
+    if (p.bool("dynamicColor") && Build.VERSION.SDK_INT >= 31) {
         colors = if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+        // Settings cards need a visible tonal step above the wallpaper-derived page surface.
+        colors = colors.copy(surfaceContainerLow = colors.surfaceContainerHigh)
+    }
     if (dark && p.bool("pureBlack"))
         colors =
             colors.copy(
