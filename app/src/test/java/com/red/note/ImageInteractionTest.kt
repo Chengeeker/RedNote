@@ -2,6 +2,9 @@ package com.red.note
 
 import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
+import android.os.Looper
+import android.os.SystemClock
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.geometry.Rect
@@ -12,12 +15,74 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSystemClock
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ImageInteractionTest {
+    @Test
+    fun galleryDoubleTapZoomsTwiceThenResetsAndRespectsHaptics() {
+        val context = RuntimeEnvironment.getApplication()
+        val looper = shadowOf(Looper.getMainLooper())
+        for ((imageWidth, firstScale) in listOf(1000 to 2.5f, 200 to 3.5f)) {
+            var plane: GalleryPlane? = null
+            var singleTaps = 0
+            val view = ZoomImage(context, { singleTaps++ }, {}, { plane = it })
+            val bitmap = Bitmap.createBitmap(imageWidth, 1000, Bitmap.Config.ARGB_8888)
+            view.layout(0, 0, 400, 400)
+            view.setPicture(BitmapDrawable(context.resources, bitmap))
+            val fittedWidth = plane!!.rect.width
+            val shadow = shadowOf(view)
+            fun tap(second: Boolean) {
+                val downTime = SystemClock.uptimeMillis()
+                fun send(action: Int) {
+                    org.robolectric.util.ReflectionHelpers.setField(shadow, "hapticFeedbackPerformed", -1)
+                    val event = MotionEvent.obtain(
+                        downTime, SystemClock.uptimeMillis(), action, 200f, 200f, 0,
+                    )
+                    try { view.onTouchEvent(event) } finally { event.recycle() }
+                    val expected =
+                        if (!second && action == MotionEvent.ACTION_DOWN && view.hapticsEnabled)
+                            HapticFeedbackConstants.KEYBOARD_TAP
+                        else -1
+                    assertEquals(expected, shadow.lastHapticFeedbackPerformed())
+                }
+                send(MotionEvent.ACTION_DOWN)
+                looper.idleFor(Duration.ofMillis(20))
+                send(MotionEvent.ACTION_UP)
+            }
+            fun doubleTap() {
+                tap(second = false)
+                looper.idleFor(Duration.ofMillis(50))
+                tap(second = true)
+            }
+            fun assertScale(expected: Float) {
+                looper.idleFor(Duration.ofMillis(350))
+                assertEquals(expected, plane!!.rect.width / fittedWidth, .01f)
+            }
+            try {
+                doubleTap()
+                assertScale(firstScale)
+                doubleTap()
+                assertScale(6f)
+                doubleTap()
+                assertScale(1f)
+                view.hapticsEnabled = false
+                repeat(3) {
+                    doubleTap()
+                    looper.idleFor(Duration.ofMillis(30))
+                }
+                assertScale(1f)
+                assertEquals(0, singleTaps)
+            } finally {
+                view.release()
+                bitmap.recycle()
+            }
+        }
+    }
+
     @Test
     fun galleryWarmupReachesThirdAndFourthImagesWithoutRequestingVisibleOriginalsAgain() {
         assertEquals(

@@ -233,6 +233,7 @@ internal fun HdrPicture(
     val currentTap by rememberUpdatedState(onTap)
     val currentZoom by rememberUpdatedState(onZoom)
     val currentPlane by rememberUpdatedState(onPlane)
+    val hapticsEnabled = LocalHapticsEnabled.current
     DisposableEffect(drawable, owner) {
         val animation = drawable as? android.graphics.drawable.Animatable
         if (owner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
@@ -253,7 +254,10 @@ internal fun HdrPicture(
             factory = { ctx ->
                 ZoomImage(ctx, { currentTap(it) }, { currentZoom(it) }, { currentPlane(it) })
             },
-            update = { it.setPicture(drawable!!) },
+            update = {
+                it.hapticsEnabled = hapticsEnabled
+                it.setPicture(drawable!!)
+            },
             onRelease = { it.release() },
             modifier = modifier,
         )
@@ -271,8 +275,10 @@ internal class ZoomImage(
     val zoomed: (Boolean) -> Unit,
     val planeChanged: (GalleryPlane) -> Unit,
 ) : ImageView(context) {
+    var hapticsEnabled = true
     private var image: android.graphics.drawable.Drawable? = null
     private var animation: android.animation.ValueAnimator? = null
+    private var doubleTapTarget: Float? = null
     private var zoom = 1f
     private var dx = 0f
     private var dy = 0f
@@ -287,6 +293,8 @@ internal class ZoomImage(
             object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
                 override fun onScale(detector: ScaleGestureDetector): Boolean {
                     flingStarted = -1L
+                    animation?.cancel()
+                    doubleTapTarget = null
                     setZoom(
                         (zoom * detector.scaleFactor).coerceIn(1f, 8f),
                         detector.focusX,
@@ -300,29 +308,44 @@ internal class ZoomImage(
         GestureDetector(
             context,
             object : GestureDetector.SimpleOnGestureListener() {
+                private var secondTapDown = false
+
                 override fun onDown(e: MotionEvent): Boolean {
                     flingStarted = -1L
+                    if (!secondTapDown && hapticsEnabled && image != null) {
+                        performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
+                    }
+                    secondTapDown = false
                     return true
                 }
 
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    doubleTapTarget = null
                     tapped(e.x / width.coerceAtLeast(1))
                     return true
                 }
 
                 override fun onDoubleTap(e: MotionEvent): Boolean {
-                    val next =
-                        if (zoom > 1f) 1f
-                        else if ((image?.intrinsicHeight ?: 0) > (image?.intrinsicWidth ?: 1) * 2)
-                            3.5f
-                        else 2.5f
+                    // GestureDetector calls onDoubleTap before onDown for the second press.
+                    secondTapDown = true
+                    val picture = image ?: return false
+                    val scale = doubleTapTarget ?: zoom
+                    val next = when {
+                        scale <= 1.01f ->
+                            if (picture.intrinsicHeight > picture.intrinsicWidth * 2) 3.5f else 2.5f
+                        scale <= 3.6f -> 6f
+                        else -> 1f
+                    }
+                    doubleTapTarget = next
+                    val focusX = e.x
+                    val focusY = e.y
                     animation?.cancel()
                     animation =
                         android.animation.ValueAnimator.ofFloat(zoom, next).apply {
                             duration = 260
                             interpolator =
                                 android.view.animation.PathInterpolator(.215f, .61f, .355f, 1f)
-                            addUpdateListener { setZoom(it.animatedValue as Float, e.x, e.y) }
+                            addUpdateListener { setZoom(it.animatedValue as Float, focusX, focusY) }
                             start()
                         }
                     return true
@@ -335,6 +358,7 @@ internal class ZoomImage(
                     distanceY: Float,
                 ): Boolean {
                     if (zoom <= 1f) return false
+                    doubleTapTarget = null
                     dx -= distanceX
                     dy -= distanceY
                     applyMatrix()
@@ -391,6 +415,7 @@ internal class ZoomImage(
         flingStarted = -1L
         animation?.cancel()
         image = value
+        doubleTapTarget = null
         zoom = 1f
         dx = 0f
         dy = 0f
@@ -401,6 +426,7 @@ internal class ZoomImage(
     fun release() {
         flingStarted = -1L
         animation?.cancel()
+        doubleTapTarget = null
         (image as? android.graphics.drawable.Animatable)?.stop()
         setImageDrawable(null)
         image = null
@@ -409,6 +435,7 @@ internal class ZoomImage(
     override fun onDetachedFromWindow() {
         flingStarted = -1L
         animation?.cancel()
+        doubleTapTarget = null
         super.onDetachedFromWindow()
     }
 
