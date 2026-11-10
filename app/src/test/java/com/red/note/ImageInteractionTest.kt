@@ -35,23 +35,24 @@ class ImageInteractionTest {
             view.setPicture(BitmapDrawable(context.resources, bitmap))
             val fittedWidth = plane!!.rect.width
             val shadow = shadowOf(view)
-            fun tap(second: Boolean) {
+            fun tap(second: Boolean = false, drag: Boolean = false, cancel: Boolean = false) {
                 val downTime = SystemClock.uptimeMillis()
-                fun send(action: Int) {
+                fun send(action: Int, x: Float = 200f) {
                     org.robolectric.util.ReflectionHelpers.setField(shadow, "hapticFeedbackPerformed", -1)
                     val event = MotionEvent.obtain(
-                        downTime, SystemClock.uptimeMillis(), action, 200f, 200f, 0,
+                        downTime, SystemClock.uptimeMillis(), action, x, 200f, 0,
                     )
                     try { view.onTouchEvent(event) } finally { event.recycle() }
                     val expected =
-                        if (!second && action == MotionEvent.ACTION_DOWN && view.hapticsEnabled)
+                        if (second && !drag && action == MotionEvent.ACTION_UP && view.hapticsEnabled)
                             HapticFeedbackConstants.KEYBOARD_TAP
                         else -1
                     assertEquals(expected, shadow.lastHapticFeedbackPerformed())
                 }
                 send(MotionEvent.ACTION_DOWN)
                 looper.idleFor(Duration.ofMillis(20))
-                send(MotionEvent.ACTION_UP)
+                if (drag) send(MotionEvent.ACTION_MOVE, 300f)
+                send(if (cancel) MotionEvent.ACTION_CANCEL else MotionEvent.ACTION_UP)
             }
             fun doubleTap() {
                 tap(second = false)
@@ -63,6 +64,20 @@ class ImageInteractionTest {
                 assertEquals(expected, plane!!.rect.width / fittedWidth, .01f)
             }
             try {
+                tap()
+                assertScale(1f)
+                assertEquals(1, singleTaps)
+
+                tap()
+                looper.idleFor(Duration.ofMillis(50))
+                tap(second = true, drag = true)
+                assertScale(1f)
+
+                tap()
+                looper.idleFor(Duration.ofMillis(50))
+                tap(second = true, cancel = true)
+                assertScale(1f)
+
                 doubleTap()
                 assertScale(firstScale)
                 doubleTap()
@@ -75,7 +90,7 @@ class ImageInteractionTest {
                     looper.idleFor(Duration.ofMillis(30))
                 }
                 assertScale(1f)
-                assertEquals(0, singleTaps)
+                assertEquals(1, singleTaps)
             } finally {
                 view.release()
                 bitmap.recycle()

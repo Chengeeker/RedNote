@@ -308,14 +308,11 @@ internal class ZoomImage(
         GestureDetector(
             context,
             object : GestureDetector.SimpleOnGestureListener() {
-                private var secondTapDown = false
+                private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+                private var secondTapStart: PointF? = null
 
                 override fun onDown(e: MotionEvent): Boolean {
                     flingStarted = -1L
-                    if (!secondTapDown && hapticsEnabled && image != null) {
-                        performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
-                    }
-                    secondTapDown = false
                     return true
                 }
 
@@ -325,10 +322,22 @@ internal class ZoomImage(
                     return true
                 }
 
-                override fun onDoubleTap(e: MotionEvent): Boolean {
-                    // GestureDetector calls onDoubleTap before onDown for the second press.
-                    secondTapDown = true
+                override fun onDoubleTapEvent(e: MotionEvent): Boolean {
+                    if (e.actionMasked == MotionEvent.ACTION_DOWN) {
+                        secondTapStart = PointF(e.x, e.y)
+                        return true
+                    }
+                    val start = secondTapStart ?: return false
+                    if (hypot(e.x - start.x, e.y - start.y) > touchSlop) {
+                        secondTapStart = null
+                        return false
+                    }
+                    // Match Compose's tap completion. GestureDetector's onDoubleTap fires on down.
+                    if (e.actionMasked != MotionEvent.ACTION_UP) return false
+                    secondTapStart = null
+                    if (e.eventTime - e.downTime >= ViewConfiguration.getLongPressTimeout()) return false
                     val picture = image ?: return false
+                    if (hapticsEnabled) performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     val scale = doubleTapTarget ?: zoom
                     val next = when {
                         scale <= 1.01f ->

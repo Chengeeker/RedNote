@@ -1,6 +1,6 @@
 # RedNote
 
-原生 Android Kotlin/Jetpack Compose 应用。项目根目录就是 Compose 工程入口，当前版本 `1.1.19+87`。Flutter 历史版本仍可从 Git 恢复。
+原生 Android Kotlin/Jetpack Compose 应用。项目根目录就是 Compose 工程入口，当前版本 `1.1.20+88`。Flutter 历史版本仍可从 Git 恢复。
 
 ## 功能
 
@@ -22,4 +22,4 @@
 python .\tool\verify_release.py
 ```
 
-构建脚本复用原 BKS 签名，运行 JVM/Robolectric 回归并构建正式 Release APK。最终 arm64 包名为 `RedNote-v1.1.19-arm64.apk`。
+构建脚本复用原 BKS 签名，运行 JVM/Robolectric 回归并构建正式 Release APK。最终 arm64 包名为 `RedNote-v1.1.20-arm64.apk`。
