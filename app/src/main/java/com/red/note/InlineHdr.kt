@@ -1,7 +1,6 @@
 package com.red.note
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -17,19 +16,12 @@ import java.io.EOFException
 import java.io.InputStream
 
 @Composable
-internal fun InlineHdrBadge(modifier: Modifier = Modifier) {
-    Text(
-        "HDR",
-        modifier
-            .semantics { contentDescription = "HDR 图片" }
-            .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(4.dp))
-            .border(.8.dp, Color.White.copy(alpha = .45f), RoundedCornerShape(4.dp))
-            .padding(horizontal = 5.dp, vertical = 2.dp),
-        color = Color.White,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Black,
-        letterSpacing = .4.sp,
-    )
+internal fun InlineHdrBadge(modifier: Modifier = Modifier, description: String = "HDR 图片", compact: Boolean = false) {
+    Text("HDR", modifier.semantics { contentDescription = description }
+        .background(Color.Black.copy(alpha = .4f), RoundedCornerShape(4.dp))
+        .padding(horizontal = if (compact) 3.dp else 6.dp, vertical = if (compact) 1.dp else 2.dp),
+        color = Color.White, fontSize = if (compact) 8.sp else 10.sp, lineHeight = if (compact) 9.sp else 12.sp,
+        fontWeight = FontWeight.Normal)
 }
 
 internal const val INLINE_HDR_HEADER_BYTES = 64 * 1024

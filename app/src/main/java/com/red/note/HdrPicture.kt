@@ -182,6 +182,7 @@ internal fun HdrPicture(
     onPlane: (GalleryPlane) -> Unit = {},
     loadEnabled: Boolean = true,
     showProgress: Boolean = true,
+    showHdr: Boolean = false,
 ) {
     val context = LocalContext.current
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
@@ -256,7 +257,7 @@ internal fun HdrPicture(
             },
             update = {
                 it.hapticsEnabled = hapticsEnabled
-                it.setPicture(drawable!!)
+                it.setPicture(drawable!!, showHdr)
             },
             onRelease = { it.release() },
             modifier = modifier,
@@ -279,6 +280,11 @@ internal class ZoomImage(
     private var image: android.graphics.drawable.Drawable? = null
     private var animation: android.animation.ValueAnimator? = null
     private var doubleTapTarget: Float? = null
+    private var sdrBase: Bitmap? = null
+    private val sdrBounds = RectF()
+    private val sdrPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private var hdrFade: android.animation.ValueAnimator? = null
+    private var hdrVisible = false
     private var zoom = 1f
     private var dx = 0f
     private var dy = 0f
@@ -419,8 +425,49 @@ internal class ZoomImage(
         applyMatrix()
     }
 
-    fun setPicture(value: android.graphics.drawable.Drawable) {
-        if (image === value) return
+    fun setPicture(value: android.graphics.drawable.Drawable, showHdr: Boolean = false) {
+        if (image !== value) replacePicture(value)
+        if (sdrBase == null || hdrVisible == showHdr) return
+        hdrVisible = showHdr
+        hdrFade?.cancel()
+        imageAlpha = 0
+        if (showHdr) {
+            hdrFade = android.animation.ValueAnimator.ofInt(0, 255).apply {
+                duration = 500
+                interpolator = android.view.animation.LinearInterpolator()
+                addUpdateListener { imageAlpha = it.animatedValue as Int }
+                start()
+            }
+        }
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val base = sdrBase
+        if (base != null && imageAlpha < 255) {
+            val save = canvas.save()
+            canvas.concat(imageMatrix)
+            canvas.drawBitmap(base, null, sdrBounds, sdrPaint)
+            canvas.restoreToCount(save)
+        }
+        super.onDraw(canvas)
+    }
+
+    private fun replacePicture(value: android.graphics.drawable.Drawable) {
+        hdrFade?.cancel()
+        hdrFade = null
+        hdrVisible = false
+        sdrBase = (value as? android.graphics.drawable.BitmapDrawable)?.bitmap?.let { bitmap ->
+            if (Build.VERSION.SDK_INT >= 34 && bitmap.hasGainmap()) {
+                // Both renditions share the decoded pixels. The wrapper has no gainmap.
+                if (bitmap.config == Bitmap.Config.HARDWARE) {
+                    bitmap.hardwareBuffer.use { Bitmap.wrapHardwareBuffer(it, bitmap.colorSpace) }
+                } else {
+                    bitmap.copy(Bitmap.Config.ARGB_8888, false)?.apply { gainmap = null }
+                }
+            } else null
+        }
+        sdrBounds.set(0f, 0f, value.intrinsicWidth.toFloat(), value.intrinsicHeight.toFloat())
+        imageAlpha = if (sdrBase == null) 255 else 0
         flingStarted = -1L
         animation?.cancel()
         image = value
@@ -433,6 +480,9 @@ internal class ZoomImage(
     }
 
     fun release() {
+        hdrFade?.cancel()
+        hdrFade = null
+        sdrBase = null
         flingStarted = -1L
         animation?.cancel()
         doubleTapTarget = null
@@ -442,6 +492,9 @@ internal class ZoomImage(
     }
 
     override fun onDetachedFromWindow() {
+        hdrFade?.cancel()
+        hdrFade = null
+        if (sdrBase != null) imageAlpha = if (hdrVisible) 255 else 0
         flingStarted = -1L
         animation?.cancel()
         doubleTapTarget = null

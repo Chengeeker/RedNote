@@ -26,11 +26,14 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
@@ -51,6 +54,32 @@ internal fun preferredStreams(
             preferred.take((if (fallback.isEmpty()) 8 else 7) - originals.size) +
             fallback)
         .take(8)
+}
+
+internal fun videoTrackHdr(transfer: Int?): Boolean? = when (transfer) {
+    null, androidx.media3.common.Format.NO_VALUE -> null
+    C.COLOR_TRANSFER_ST2084, C.COLOR_TRANSFER_HLG -> true
+    else -> false
+}
+
+internal suspend fun videoPlaybackStreams(
+    sources: List<VideoStream>,
+    hdrSupported: Boolean,
+    quality: String,
+    probeOriginal: suspend (VideoStream) -> Boolean?,
+): List<VideoStream> {
+    var candidates = sources
+    var tryOriginal = quality == "original"
+    if (hdrSupported && quality != "sdr" &&
+        (tryOriginal || sources.none { it.hdr && !it.original })) {
+        sources.firstOrNull { it.original }?.let { original ->
+            val hdr = probeOriginal(original)
+            // A bounded probe can fail where the player's extractor succeeds; unknown is not SDR.
+            tryOriginal = tryOriginal || hdr != false
+            if (hdr == true) candidates = sources.map { if (it == original) it.copy(hdr = true) else it }
+        }
+    }
+    return preferredStreams(candidates, hdrSupported && quality != "sdr", tryOriginal)
 }
 
 private fun durationText(ms: Long): String {
@@ -85,6 +114,7 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
     var resumePosition by remember { mutableLongStateOf(position) }
     var playing by remember { mutableStateOf(false) }
     var ready by remember { mutableStateOf(false) }
+    var trackHdr by remember { mutableStateOf<Boolean?>(null) }
     var error by remember { mutableStateOf("") }
     var controls by rememberSaveable { mutableStateOf(true) }
     var touched by remember { mutableIntStateOf(0) }
@@ -96,7 +126,7 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
     var speedPicker by remember { mutableStateOf(false) }
     var qualityPicker by remember { mutableStateOf(false) }
     val player = remember {
-        ExoPlayer.Builder(activity).build().apply {
+        ExoPlayer.Builder(activity, DefaultRenderersFactory(activity).setEnableDecoderFallback(true)).build().apply {
             setAudioAttributes(
                 androidx.media3.common.AudioAttributes.Builder()
                     .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
@@ -108,9 +138,7 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
         }
     }
     val hdrSupported = remember {
-        if (Build.VERSION.SDK_INT >= 26)
-            activity.windowManager.defaultDisplay.hdrCapabilities.supportedHdrTypes.isNotEmpty()
-        else false
+        activity.windowManager.defaultDisplay.hdrCapabilities.supportedHdrTypes.isNotEmpty()
     }
     val oldBrightness = remember { window.attributes.screenBrightness }
     val oldColorMode = remember { if (Build.VERSION.SDK_INT >= 26) window.colorMode else 0 }
@@ -157,6 +185,17 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                     if (ready) duration = player.duration.coerceAtLeast(0)
                 }
 
+                override fun onTracksChanged(tracks: Tracks) {
+                    trackHdr = tracks.groups.firstNotNullOfOrNull { group ->
+                        if (group.type != C.TRACK_TYPE_VIDEO) null
+                        else (0 until group.length).firstNotNullOfOrNull { index ->
+                            if (group.isTrackSelected(index))
+                                videoTrackHdr(group.getTrackFormat(index).colorInfo?.colorTransfer)
+                            else null
+                        }
+                    }
+                }
+
                 override fun onPlayerError(failure: PlaybackException) {
                     resumePosition = player.currentPosition
                     if (attempt < attempts.lastIndex) {
@@ -191,36 +230,17 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
         ready = false
         error = ""
         player.pause()
-        var sources = sourceList
-        var hdrOriginal = false
-        if (
-            hdrSupported &&
-                quality != "sdr" &&
-                (quality == "original" || sources.none { it.hdr && !it.original })
-        ) {
-            val original = sources.firstOrNull { it.original }
-            if (original != null) {
-                val hdr =
-                    withContext(Dispatchers.IO) {
-                        runCatching { HdrVideoProbe.probe(original.url, referer) }.getOrNull()
-                    }
-                if (hdr == true) {
-                    hdrOriginal = true
-                    sources = sources.map { if (it == original) it.copy(hdr = true) else it }
-                }
+        attempts = videoPlaybackStreams(sourceList, hdrSupported, quality) { original ->
+            withContext(Dispatchers.IO) {
+                runCatching { HdrVideoProbe.probe(original.url, referer) }.getOrNull()
             }
         }
-        attempts =
-            preferredStreams(
-                sources,
-                hdrSupported && quality != "sdr",
-                quality == "original" || hdrOriginal,
-            )
         attempt = 0
         if (attempts.isEmpty()) error = "未找到可播放的视频流"
     }
     LaunchedEffect(attempts, attempt, revision) {
         val stream = attempts.getOrNull(attempt) ?: return@LaunchedEffect
+        trackHdr = null
         ready = false
         error = ""
         val factory =
@@ -244,14 +264,14 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
         player.seekTo(resumePosition)
         player.prepare()
         player.playWhenReady = resumePlaying && owner.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
-        if (Build.VERSION.SDK_INT >= 26)
-            window.colorMode =
-                if (hdrSupported && (stream.hdr || stream.original)) ActivityInfo.COLOR_MODE_HDR
-                else oldColorMode
         delay(20000)
         if (!ready && error.isEmpty()) {
             if (attempt < attempts.lastIndex) attempt++ else error = "视频加载超时，请重试加载"
         }
+    }
+    LaunchedEffect(trackHdr) {
+        if (Build.VERSION.SDK_INT >= 26)
+            window.colorMode = if (hdrSupported && trackHdr == true) ActivityInfo.COLOR_MODE_HDR else oldColorMode
     }
     LaunchedEffect(playing) {
         while (playing) {
@@ -453,6 +473,8 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
             Box(Modifier.fillMaxSize()) {
                 ReviewVideoTop(Modifier.align(Alignment.TopCenter), note.title, note.author, landscape,
                     close = { if (landscape) rotate() else back() }) {
+                    if (ready && error.isEmpty() && (trackHdr ?: (attempts.getOrNull(attempt)?.hdr == true)))
+                        InlineHdrBadge(description = "HDR 视频")
                     ReviewVideoAction("download", "保存视频", enabled = !activity.saving && attempts.isNotEmpty(), busy = activity.saving) {
                         attempts.getOrNull(attempt)?.let { activity.saveMedia(it.url, true, note.author, it.audio) }
                     }

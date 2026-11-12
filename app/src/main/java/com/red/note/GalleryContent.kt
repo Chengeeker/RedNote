@@ -202,6 +202,7 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                         page.urls[index],
                         Modifier.fillMaxSize(),
                         loadEnabled = motion?.page !== page,
+                        showHdr = hdrDisplay && index == pager.settledPage && motion?.page !== page,
                         showProgress =
                             preview == null &&
                                 (index != page.index || page.flight?.opening == null),
@@ -313,15 +314,10 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                                     Modifier.fillMaxSize().background(Color.White.copy(alpha = .5f))
                                 )
                             if (state.hdrImages[page.urls[index]] == true)
-                                Text(
-                                    "HDR",
-                                    Modifier.align(Alignment.BottomEnd)
-                                        .padding(2.dp)
-                                        .background(Color.Black.copy(alpha = .72f))
-                                        .padding(horizontal = 3.dp, vertical = 1.dp),
-                                    fontSize = 9.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
+                                InlineHdrBadge(
+                                    Modifier.align(Alignment.BottomEnd).padding(2.dp),
+                                    description = "第 ${index + 1} 张 HDR 图片",
+                                    compact = true,
                                 )
                         }
                     }
@@ -401,10 +397,14 @@ internal fun GalleryPagerSync(
 
 @Composable
 internal fun MediaBadge(text: String, modifier: Modifier = Modifier) {
+    if (text == "HDR") {
+        InlineHdrBadge(modifier)
+        return
+    }
     Text(
         text,
         modifier
-            .semantics { contentDescription = if (text == "HDR") "HDR 图片" else text }
+            .semantics { contentDescription = text }
             .shadow(2.dp, RoundedCornerShape(6.dp))
             .background(Color.Black.copy(alpha = .72f), RoundedCornerShape(6.dp))
             .border(1.dp, Color.White.copy(alpha = .55f), RoundedCornerShape(6.dp))

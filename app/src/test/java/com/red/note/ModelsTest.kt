@@ -6,6 +6,23 @@ import org.junit.Test
 
 class ModelsTest {
     @Test
+    fun mobileVideoKeepsSdrTranscodesAndOriginalAsSeparateCandidates() {
+        val video = JSONObject("""{
+            "media":{"stream":{"h265":[{"masterUrl":"https://a.xhscdn.com/sdr",
+            "backupUrls":["https://a.xhscdn.com/backup"],"audioCodec":"aac","hdrType":0}]}},
+            "consumer":{"originVideoKey":"a/original"},
+            "mediaV2":{"audioStream":{"aac":[{"masterUrl":"https://a.xhscdn.com/audio","defaultStream":1}]}}
+        }""")
+        val streams = videoStreams(video)
+        assertEquals(3, streams.size)
+        assertTrue(streams.none { it.hdr })
+        assertTrue(streams.all { it.audio.isEmpty() })
+        assertTrue(streams.last().original)
+        video.getJSONObject("media").getJSONObject("stream").getJSONArray("h265").getJSONObject(0).remove("audioCodec")
+        assertEquals("https://a.xhscdn.com/audio", videoStreams(video).first().audio)
+    }
+
+    @Test
     fun separatesAudioAndKeepsBackups() {
         val video =
             JSONObject(

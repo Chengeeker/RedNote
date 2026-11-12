@@ -378,6 +378,8 @@ internal fun DetailPage(
                     ) {
                         if (urls.isNotEmpty())
                             item {
+                                val video = note.raw.optJSONObject("video")
+                                val hasHdrVideo = remember(video) { video?.let(::videoStreams)?.any { it.hdr } == true }
                                 val ratio =
                                     detailImageRatio(
                                         note.images.firstOrNull(),
@@ -495,13 +497,14 @@ internal fun DetailPage(
                                             color = androidx.compose.ui.graphics.Color.White,
                                             fontSize = 12.sp,
                                         )
-                                    if (
+                                    val hasHdrImage =
                                         urls.getOrNull(targetPage ?: pager.currentPage)?.let {
                                             state.hdrImages[it]
                                         } == true
-                                    )
+                                    if (hasHdrVideo || hasHdrImage)
                                         InlineHdrBadge(
-                                            Modifier.align(Alignment.BottomEnd).padding(12.dp)
+                                            Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                                            description = if (hasHdrVideo) "HDR 视频" else "HDR 图片",
                                         )
                                 }
                             }

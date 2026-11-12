@@ -435,6 +435,50 @@ class UiParityTest {
     }
 
     @Test
+    fun hdrBadgesShareRegularAndCompactStylesAtLargeFont() {
+        val state = RedState(RuntimeEnvironment.getApplication())
+        state.preferences.set("fontScale", 1.5)
+        compose.setContent {
+            AppTheme(state) {
+                Column {
+                    InlineHdrBadge(Modifier.testTag("inline"))
+                    MediaBadge("HDR", Modifier.testTag("gallery"))
+                    Box(Modifier.size(64.dp)) {
+                        InlineHdrBadge(Modifier.testTag("thumbnail"), description = "第 2 张 HDR 图片", compact = true)
+                    }
+                    MediaBadge("GIF", Modifier.testTag("gif"))
+                }
+            }
+        }
+        for ((tag, size, height) in listOf(Triple("inline", 15f, 18f), Triple("gallery", 15f, 18f), Triple("thumbnail", 12f, 13.5f))) {
+            val layouts = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            compose.onNodeWithTag(tag).assertIsDisplayed().performSemanticsAction(
+                androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult
+            ) { it(layouts) }
+            val layout = layouts.single()
+            Assert.assertEquals(1, layout.lineCount)
+            // Paragraph width can retain parent constraints; check the actual label bounds.
+            Assert.assertTrue("$tag label is clipped", layout.getLineLeft(0) >= 0f && layout.getLineRight(0) <= layout.size.width + .5f)
+            Assert.assertFalse(layout.isLineEllipsized(0))
+            Assert.assertEquals(size, layout.layoutInput.style.fontSize.value, .001f)
+            Assert.assertEquals(height, layout.layoutInput.style.lineHeight.value, .001f)
+            Assert.assertEquals(androidx.compose.ui.text.font.FontWeight.Normal, layout.layoutInput.style.fontWeight)
+        }
+        compose.onNodeWithContentDescription("第 2 张 HDR 图片").assertIsDisplayed()
+        compose.onNodeWithTag("gif").assertTextEquals("GIF")
+        compose.runOnUiThread {
+            val view = compose.activity.findViewById<android.view.View>(android.R.id.content)
+            val bitmap = android.graphics.Bitmap.createBitmap(view.width, view.height, android.graphics.Bitmap.Config.ARGB_8888)
+            try {
+                view.draw(android.graphics.Canvas(bitmap))
+                java.io.File("build/parity/hdr-badges.png").apply { parentFile.mkdirs() }.outputStream().use {
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+            } finally { bitmap.recycle() }
+        }
+    }
+
+    @Test
     fun detailCommentPromptKeepsOneLineAtNarrowWidthAndLargeFont() {
         val state = RedState(RuntimeEnvironment.getApplication())
         state.preferences.set("fontScale", 1.5)

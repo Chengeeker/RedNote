@@ -23,6 +23,38 @@ import org.robolectric.shadows.ShadowSystemClock
 @Config(sdk = [35])
 class ImageInteractionTest {
     @Test
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    fun hdrOriginalFadesLinearlyOnlyOnActivePage() {
+        val context = RuntimeEnvironment.getApplication()
+        val view = ZoomImage(context, {}, {}, {})
+        val bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888)
+        val gain = Bitmap.createBitmap(4, 4, Bitmap.Config.ARGB_8888)
+        bitmap.gainmap = android.graphics.Gainmap(gain)
+        val picture = BitmapDrawable(context.resources, bitmap)
+        try {
+            view.setPicture(picture)
+            assertEquals(0, view.imageAlpha)
+            view.setPicture(picture, showHdr = true)
+            assertEquals(0, view.imageAlpha)
+            val animator = org.robolectric.util.ReflectionHelpers.getField<android.animation.ValueAnimator>(view, "hdrFade")
+            assertEquals(500L, animator.duration)
+            animator.currentPlayTime = 125
+            assertEquals(63, view.imageAlpha)
+            animator.currentPlayTime = 375
+            assertEquals(191, view.imageAlpha)
+            animator.currentPlayTime = 500
+            assertEquals(255, view.imageAlpha)
+            view.setPicture(picture)
+            assertEquals(0, view.imageAlpha)
+            assertFalse(animator.isStarted)
+        } finally {
+            view.release()
+            bitmap.recycle()
+            gain.recycle()
+        }
+    }
+
+    @Test
     fun galleryDoubleTapZoomsTwiceThenResetsAndRespectsHaptics() {
         val context = RuntimeEnvironment.getApplication()
         val looper = shadowOf(Looper.getMainLooper())

@@ -97,11 +97,11 @@ internal fun videoStreams(video: JSONObject): List<VideoStream> {
                 if (raw.length < 1024 * 1024) runCatching { JSONObject(raw) }.getOrNull() else null
             else -> null
         }
-    val audio = v2?.optJSONObject("audio_stream") ?: JSONObject()
+    val audio = v2?.optJSONObject("audio_stream") ?: v2?.optJSONObject("audioStream") ?: JSONObject()
     fun urls(item: JSONObject) =
         buildList {
-                add(item.optString("master_url"))
-                val a = item.optJSONArray("backup_urls")
+                add(item.optString("master_url", item.optString("masterUrl")))
+                val a = item.optJSONArray("backup_urls") ?: item.optJSONArray("backupUrls")
                 if (a != null) for (i in 0 until a.length()) add(a.optString(i))
             }
             .map(::mediaUrl)
@@ -111,7 +111,7 @@ internal fun videoStreams(video: JSONObject): List<VideoStream> {
             .keys()
             .asSequence()
             .flatMap { audio.rows(it) }
-            .sortedByDescending { it.optInt("default_stream") == 1 }
+            .sortedByDescending { it.optInt("default_stream", it.optInt("defaultStream")) == 1 }
             .flatMap(::urls)
             .distinct()
             .take(2)
@@ -122,8 +122,8 @@ internal fun videoStreams(video: JSONObject): List<VideoStream> {
                 .forEach { codec ->
                     streams.rows(codec).forEach { entry ->
                         val hasAudio =
-                            entry.optString("audio_codec").isNotEmpty() ||
-                                entry.optInt("audio_bitrate") > 0
+                            entry.optString("audio_codec", entry.optString("audioCodec")).isNotEmpty() ||
+                                entry.optInt("audio_bitrate", entry.optInt("audioBitrate")) > 0
                         val candidates =
                             if (hasAudio || audioUrls.isEmpty()) listOf("") else audioUrls
                         urls(entry).forEach { url ->

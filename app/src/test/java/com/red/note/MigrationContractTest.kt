@@ -88,6 +88,15 @@ class MigrationContractTest {
     }
 
     @Test
+    fun hdrBadgeDistinguishesVideoTransferFromUnknownMetadata() {
+        assertEquals(true, videoTrackHdr(androidx.media3.common.C.COLOR_TRANSFER_ST2084))
+        assertEquals(true, videoTrackHdr(androidx.media3.common.C.COLOR_TRANSFER_HLG))
+        assertEquals(false, videoTrackHdr(androidx.media3.common.C.COLOR_TRANSFER_SDR))
+        assertNull(videoTrackHdr(androidx.media3.common.Format.NO_VALUE))
+        assertNull(videoTrackHdr(null))
+    }
+
+    @Test
     fun streamAttemptsKeepCompatibilityWithinEightCandidates() {
         val hdr = (0..10).map { VideoStream("https://a.xhscdn.com/h$it", hdr = true) }
         val normal = VideoStream("https://a.xhscdn.com/sdr")
@@ -97,6 +106,23 @@ class MigrationContractTest {
         assertEquals(original, attempts.first())
         assertEquals(normal, attempts.last())
         assertEquals(normal, preferredStreams(hdr + normal + original, false, false).first())
+    }
+
+    @Test
+    fun unknownProbeStillPlaysOriginalWithoutInventingHdrMetadata() = kotlinx.coroutines.runBlocking {
+        val sdr = VideoStream("https://a.xhscdn.com/transcoded")
+        val original = VideoStream("https://a.xhscdn.com/source", original = true)
+        val streams = listOf(sdr, original)
+        val unknown = videoPlaybackStreams(streams, true, "auto") { null }
+        assertEquals(listOf(original, sdr), unknown)
+        assertFalse(unknown.first().hdr)
+        assertEquals(sdr, videoPlaybackStreams(streams, true, "auto") { false }.first())
+        assertEquals(original.copy(hdr = true), videoPlaybackStreams(streams, true, "auto") { true }.first())
+        assertEquals(original, videoPlaybackStreams(streams, true, "original") { false }.first())
+        assertEquals(listOf(sdr), videoPlaybackStreams(streams, true, "sdr") { error("No probe in compatibility mode") })
+        assertEquals(listOf(sdr), videoPlaybackStreams(streams, false, "auto") { error("No probe on SDR display") })
+        val hdr = sdr.copy(url = "https://a.xhscdn.com/hdr", hdr = true)
+        assertEquals(hdr, videoPlaybackStreams(streams + hdr, true, "auto") { error("Known HDR rendition needs no probe") }.first())
     }
 
     @Test
