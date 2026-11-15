@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.*
 import androidx.compose.foundation.shape.*
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.*
@@ -427,6 +430,21 @@ internal fun GalleryControl(
     val liquid = state.preferences.bool("liquidGlass")
     val density = LocalDensity.current
     val view = LocalView.current
+    if (!liquid) {
+        PlainGalleryControl(label, enabled, {
+            if (state.preferences.bool("haptics", true))
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            action()
+        }) {
+            val tint = Color.White.copy(alpha = if (enabled) 1f else .38f)
+            when (icon) {
+                "arrow_back_rounded" -> Icon(Icons.AutoMirrored.Outlined.ArrowBack, null, Modifier.size(22.dp), tint = tint)
+                "download_rounded" -> Icon(painterResource(R.drawable.review_download_rounded), null, Modifier.size(22.dp), tint = tint)
+                else -> Glyph(icon, null, 22.dp, tint)
+            }
+        }
+        return
+    }
     var down by remember { mutableStateOf(false) }
     var drag by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var origin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -510,17 +528,13 @@ internal fun GalleryControl(
             },
             contentAlignment = Alignment.Center,
         ) {
-            if (liquid) {
-                GlassDecoration(
-                    state,
-                    Modifier.fillMaxSize(),
-                    1,
-                    touch = press.coerceIn(0f, 1f),
-                )
-            } else {
-                FlutterGallerySurface()
-            }
-            Glyph(icon, null, if (liquid) 22.dp else 24.dp, Color.White.copy(alpha = if (enabled) 1f else .38f))
+            GlassDecoration(
+                state,
+                Modifier.fillMaxSize(),
+                1,
+                touch = press.coerceIn(0f, 1f),
+            )
+            Glyph(icon, null, 22.dp, Color.White.copy(alpha = if (enabled) 1f else .38f))
         }
     }
 }

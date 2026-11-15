@@ -12,8 +12,8 @@ android {
         applicationId = "com.red.note"
         minSdk = 24
         targetSdk = 36
-        versionCode = 91
-        versionName = "1.1.23"
+        versionCode = 92
+        versionName = "1.1.24"
         ndk { abiFilters += "arm64-v8a" }
     }
     buildFeatures { compose = true; buildConfig = true }
@@ -34,6 +34,7 @@ kotlin { compilerOptions { jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.02.00"))
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
     implementation("io.github.kyant0:backdrop:1.0.6")
     implementation("com.github.QWEA0:liquidglass:v2.0.11")
     implementation("androidx.activity:activity-compose:1.13.0")
