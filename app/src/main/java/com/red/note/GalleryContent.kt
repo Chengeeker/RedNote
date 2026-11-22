@@ -282,6 +282,7 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                         pageSize = PageSize.Fixed(width * .16f),
                         contentPadding = PaddingValues(horizontal = width * .42f),
                         beyondViewportPageCount = 3,
+                        overscrollEffect = null,
                     ) { index ->
                         Box(
                             Modifier.fillMaxSize()

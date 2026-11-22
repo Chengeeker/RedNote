@@ -12,8 +12,8 @@ android {
         applicationId = "com.red.note"
         minSdk = 24
         targetSdk = 36
-        versionCode = 92
-        versionName = "1.1.24"
+        versionCode = 93
+        versionName = "1.1.25"
         ndk { abiFilters += "arm64-v8a" }
     }
     buildFeatures { compose = true; buildConfig = true }
