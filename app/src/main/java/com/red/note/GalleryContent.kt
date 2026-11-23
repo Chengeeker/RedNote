@@ -271,18 +271,11 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                             .padding(bottom = 32.dp).fillMaxWidth()
                             .height(64.dp)
                             .graphicsLayer { alpha = thumbnailOpacity },
-                        flingBehavior =
-                            PagerDefaults.flingBehavior(
-                                thumbnails,
-                                pagerSnapDistance =
-                                    PagerSnapDistance.atMost(page.urls.size.coerceAtLeast(1)),
-                                snapAnimationSpec =
-                                    tween(120, easing = CubicBezierEasing(.215f, .61f, .355f, 1f)),
-                            ),
+                        flingBehavior = rememberGalleryThumbnailFling(thumbnails),
+                        overscrollEffect = null,
                         pageSize = PageSize.Fixed(width * .16f),
                         contentPadding = PaddingValues(horizontal = width * .42f),
                         beyondViewportPageCount = 3,
-                        overscrollEffect = null,
                     ) { index ->
                         Box(
                             Modifier.fillMaxSize()
@@ -368,12 +361,17 @@ internal fun GalleryPagerSync(
         } else if (mainDragged) {
             reelDriving.value = false
             thumbnails.stopScroll()
-            thumbnails.requestScrollToPage(pager.currentPage)
         }
     }
     LaunchedEffect(pager) {
-        snapshotFlow { pager.currentPage }
-            .collect { index -> if (!reelDriving.value) thumbnails.requestScrollToPage(index) }
+        snapshotFlow { Triple(reelDriving.value, pager.currentPage, pager.currentPageOffsetFraction) }
+            .collect { (driving, index, fraction) ->
+                if (!driving) {
+                    val position = (index + fraction).coerceIn(0f, (thumbnails.pageCount - 1).coerceAtLeast(0).toFloat())
+                    val nearest = position.roundToInt()
+                    thumbnails.requestScrollToPage(nearest, position - nearest)
+                }
+            }
     }
     LaunchedEffect(thumbnails) {
         snapshotFlow {
