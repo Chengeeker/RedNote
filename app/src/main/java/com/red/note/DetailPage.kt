@@ -455,6 +455,8 @@ internal fun DetailPage(
                                                             note.author,
                                                             initial,
                                                             previews,
+                                                            livePhotos = note.images.filter { originalImageUrl(it).isNotEmpty() }
+                                                                .map { image -> livePhotoVideo(image)?.let(::videoStreams).orEmpty() },
                                                             flight =
                                                                 GalleryFlight(image, { anchor }, i),
                                                         )

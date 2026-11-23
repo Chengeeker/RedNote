@@ -176,6 +176,8 @@ internal fun HdrPicture(
     url: String,
     modifier: Modifier = Modifier,
     onTap: (Float) -> Unit = {},
+    onLongPress: () -> Unit = {},
+    onPressEnd: () -> Unit = {},
     onDecoded: (Boolean) -> Unit = {},
     onZoom: (Boolean) -> Unit = {},
     onKind: (String) -> Unit = {},
@@ -232,6 +234,8 @@ internal fun HdrPicture(
         }
     }
     val currentTap by rememberUpdatedState(onTap)
+    val currentLongPress by rememberUpdatedState(onLongPress)
+    val currentPressEnd by rememberUpdatedState(onPressEnd)
     val currentZoom by rememberUpdatedState(onZoom)
     val currentPlane by rememberUpdatedState(onPlane)
     val hapticsEnabled = LocalHapticsEnabled.current
@@ -257,6 +261,8 @@ internal fun HdrPicture(
             },
             update = {
                 it.hapticsEnabled = hapticsEnabled
+                it.longPressed = { currentLongPress() }
+                it.pressEnded = { currentPressEnd() }
                 it.setPicture(drawable!!, showHdr)
             },
             onRelease = { it.release() },
@@ -277,6 +283,8 @@ internal class ZoomImage(
     val planeChanged: (GalleryPlane) -> Unit,
 ) : ImageView(context) {
     var hapticsEnabled = true
+    var longPressed: () -> Unit = {}
+    var pressEnded: () -> Unit = {}
     private var image: android.graphics.drawable.Drawable? = null
     private var animation: android.animation.ValueAnimator? = null
     private var doubleTapTarget: Float? = null
@@ -320,6 +328,10 @@ internal class ZoomImage(
                 override fun onDown(e: MotionEvent): Boolean {
                     flingStarted = -1L
                     return true
+                }
+
+                override fun onLongPress(e: MotionEvent) {
+                    longPressed()
                 }
 
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
@@ -553,6 +565,8 @@ internal class ZoomImage(
         parent?.requestDisallowInterceptTouchEvent(zoom > 1f || event.pointerCount > 1)
         scaler.onTouchEvent(event)
         taps.onTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL)
+            pressEnded()
         return true
     }
 }

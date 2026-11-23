@@ -158,6 +158,15 @@ internal fun videoStreams(video: JSONObject): List<VideoStream> {
         .distinctBy { "${it.url}|${it.audio}" }
 }
 
+internal fun livePhotoVideo(image: JSONObject): JSONObject? {
+    val live = image.opt("live_photo") ?: image.opt("livePhoto")
+    val nested = live as? JSONObject
+    if (live != true && nested == null) return null
+    val video = nested?.takeIf { it.has("media") } ?: JSONObject().put(
+        "media", JSONObject().put("stream", image.optJSONObject("stream") ?: nested?.optJSONObject("stream") ?: JSONObject())
+    )
+    return video.takeIf { videoStreams(it).isNotEmpty() }
+}
 internal data class Note(
     val id: String,
     val token: String,

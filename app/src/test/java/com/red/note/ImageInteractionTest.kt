@@ -55,6 +55,28 @@ class ImageInteractionTest {
     }
 
     @Test
+    fun longPressStartsAndReleaseOrCancelEndsLivePhoto() {
+        val view = ZoomImage(RuntimeEnvironment.getApplication(), {}, {}, {})
+        var started = 0
+        var ended = 0
+        view.longPressed = { started++ }
+        view.pressEnded = { ended++ }
+        val looper = shadowOf(Looper.getMainLooper())
+        fun send(down: Long, action: Int) {
+            val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, 50f, 50f, 0)
+            try { view.onTouchEvent(event) } finally { event.recycle() }
+        }
+        for (end in listOf(MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL)) {
+            val down = SystemClock.uptimeMillis()
+            send(down, MotionEvent.ACTION_DOWN)
+            looper.idleFor(Duration.ofMillis(android.view.ViewConfiguration.getLongPressTimeout().toLong() + 50))
+            send(down, end)
+        }
+        assertEquals(2, started)
+        assertEquals(2, ended)
+    }
+
+    @Test
     fun galleryDoubleTapZoomsTwiceThenResetsAndRespectsHaptics() {
         val context = RuntimeEnvironment.getApplication()
         val looper = shadowOf(Looper.getMainLooper())

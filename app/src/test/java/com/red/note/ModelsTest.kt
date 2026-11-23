@@ -6,6 +6,16 @@ import org.junit.Test
 
 class ModelsTest {
     @Test
+    fun livePhotosRequirePlayableStreams() {
+        val image = JSONObject("""{"live_photo":true,"stream":{"h264":[{"masterUrl":"https://a.xhscdn.com/live.mp4"}]}}""")
+        assertEquals("https://a.xhscdn.com/live.mp4", videoStreams(livePhotoVideo(image)!!).first().url)
+        image.put("live_photo", false)
+        assertNull(livePhotoVideo(image))
+        assertNull(livePhotoVideo(JSONObject("""{"livePhoto":true,"stream":{}}""")))
+        assertNotNull(livePhotoVideo(JSONObject("""{"live_photo":{"media":{"stream":{"h265":[{"master_url":"https://a.xhscdn.com/live"}]}}}}""")))
+    }
+
+    @Test
     fun mobileVideoKeepsSdrTranscodesAndOriginalAsSeparateCandidates() {
         val video = JSONObject("""{
             "media":{"stream":{"h265":[{"masterUrl":"https://a.xhscdn.com/sdr",

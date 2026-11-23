@@ -39,6 +39,7 @@ internal sealed interface Page {
         val previews: List<String> = urls,
         val heroScope: Any? = origin,
         val flight: GalleryFlight? = null,
+        val livePhotos: List<List<VideoStream>> = emptyList(),
     ) : Page
 
     data class Video(val note: Note) : Page

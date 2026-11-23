@@ -63,8 +63,23 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
     }
     val originalPlanes = remember(page) { mutableSetOf<Int>() }
     var zoomed by remember { mutableStateOf(false) }
+    var playingLive by remember(page) { mutableStateOf(false) }
+    var liveRendered by remember(page) { mutableStateOf(false) }
+    var liveError by remember(page) { mutableStateOf(false) }
+    var holdingLive by remember(page) { mutableStateOf(false) }
+    val liveSources = page.livePhotos.getOrNull(pager.currentPage).orEmpty()
+    LaunchedEffect(pager.currentPage) {
+        playingLive = false; liveRendered = false; holdingLive = false; liveError = false
+    }
+    LaunchedEffect(pager.isScrollInProgress, motion) {
+        if (pager.isScrollInProgress || motion != null) {
+            playingLive = false; liveRendered = false; holdingLive = false
+        }
+    }
+    androidx.activity.compose.BackHandler(enabled = playingLive) { playingLive = false }
     val reelDriving = remember { mutableStateOf(false) }
     val reelDragged = GalleryPagerSync(pager, thumbnails, reelDriving)
+    val mainDragged by pager.interactionSource.collectIsDraggedAsState()
     val old = remember { if (Build.VERSION.SDK_INT >= 26) activity.window.colorMode else 0 }
     val insets = remember {
         WindowCompat.getInsetsController(activity.window, activity.window.decorView)
@@ -96,19 +111,21 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
             insets.isAppearanceLightNavigationBars = oldNav
         }
     }
-    LaunchedEffect(pager) {
+    LaunchedEffect(pager, reelDriving) {
         var previous = pager.currentPage
         var lastTick = -12L
-        snapshotFlow { pager.currentPage }
-            .collect { index ->
+        snapshotFlow { Triple(reelDriving.value, mainDragged, pager.currentPage) }
+            .collect { (fromReel, fromMainDrag, index) ->
                 val now = android.os.SystemClock.uptimeMillis()
                 if (
+                    fromReel &&
+                        !fromMainDrag &&
                     index != previous &&
                         now - lastTick >= 12 &&
                         state.preferences.bool("haptics", true)
                 ) {
                     activity.window.decorView.performHapticFeedback(
-                        android.view.HapticFeedbackConstants.CLOCK_TICK
+                        android.view.HapticFeedbackConstants.KEYBOARD_TAP
                     )
                     lastTick = now
                 }
@@ -194,16 +211,29 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                     Picture(
                         page.previews.getOrElse(index) { page.urls[index] },
                         null,
-                        Modifier.fillMaxSize(),
+                        Modifier.fillMaxSize().graphicsLayer { alpha = if (index == pager.currentPage && playingLive && liveRendered) 0f else 1f },
                         ContentScale.Fit,
                         background = Color.Transparent,
                         onImageReady = { preview = it },
                         retained = page.flight?.opening.takeIf { index == page.index },
                         holdPreview = motion?.page === page,
                     )
+                    if (index == pager.currentPage && liveSources.isNotEmpty() && motion == null)
+                        LivePhotoLayer(liveSources, playingLive,
+                            onRendered = { liveRendered = it },
+                            onStopped = { failed -> playingLive = false; liveError = failed },
+                            modifier = Modifier.fillMaxSize())
                     HdrPicture(
                         page.urls[index],
-                        Modifier.fillMaxSize(),
+                        Modifier.fillMaxSize().graphicsLayer { alpha = if (index == pager.currentPage && playingLive && liveRendered) 0f else 1f },
+                        onLongPress = {
+                            if (index == pager.currentPage && liveSources.isNotEmpty() && motion == null && !zoomed) {
+                                if (state.preferences.bool("haptics", true))
+                                    activity.window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                                holdingLive = true; liveError = false; playingLive = true
+                            }
+                        },
+                        onPressEnd = { if (holdingLive) { holdingLive = false; playingLive = false } },
                         loadEnabled = motion?.page !== page,
                         showHdr = hdrDisplay && index == pager.settledPage && motion?.page !== page,
                         showProgress =
@@ -219,7 +249,7 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                             if (hdr || state.hdrImages[url] != true) state.hdrImages[url] = hdr
                             backdrop.revision++
                         },
-                        onZoom = { if (index == pager.currentPage) zoomed = it },
+                        onZoom = { if (index == pager.currentPage) { zoomed = it; if (it) playingLive = false } },
                         onKind = { kinds[index] = it },
                         onPlane = { plane ->
                             originalPlanes.add(index)
@@ -229,6 +259,9 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                     )
                 }
             }
+            if (liveError && chrome)
+                Text("动态照片播放失败", Modifier.align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = .7f), RoundedCornerShape(12.dp)).padding(12.dp), color = Color.White)
             if (
                 chrome &&
                     (chromeOpacity > 0f || thumbnailOpacity > 0f) &&
@@ -243,7 +276,21 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     GalleryControl(state, "arrow_back_rounded", "返回", motion == null, action = back)
-                    Text(
+                    if (liveSources.isNotEmpty()) {
+                        val shape = RoundedCornerShape(20.dp)
+                        Row(
+                            Modifier.clip(shape)
+                                .background(if (playingLive) Color.White else Color.Black.copy(alpha = .54f))
+                                .border(1.dp, if (playingLive) Color.White else Color.White.copy(alpha = .24f), shape)
+                                .clickable(enabled = motion == null && !zoomed) { liveError = false; playingLive = !playingLive }
+                                .padding(horizontal = 15.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(if (playingLive) "暂停 Live 图" else "播放 Live 图",
+                                color = if (playingLive) Color.Black else Color.White,
+                                fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    } else Text(
                         "${pager.currentPage+1} / ${page.urls.size}",
                         Modifier.background(
                                 Color.Black.copy(alpha = .45f),
@@ -288,6 +335,8 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                                     RoundedCornerShape(8.dp),
                                 )
                                 .thumbnailClick {
+                                    if (state.preferences.bool("haptics", true))
+                                        activity.window.decorView.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
                                     scope.launch {
                                         reelDriving.value = false
                                         thumbnails.stopScroll()
@@ -308,7 +357,8 @@ internal fun GalleryPage(state: RedState, page: Page.Gallery, back: () -> Unit) 
                             )
                             if (index != pager.currentPage)
                                 Box(
-                                    Modifier.fillMaxSize().background(Color.White.copy(alpha = .5f))
+                                    Modifier.matchParentSize().padding(2.dp).clip(RoundedCornerShape(6.dp))
+                                        .background(Color.White.copy(alpha = .5f))
                                 )
                             if (state.hdrImages[page.urls[index]] == true)
                                 InlineHdrBadge(
@@ -432,7 +482,7 @@ internal fun GalleryControl(
     if (!liquid) {
         PlainGalleryControl(label, enabled, {
             if (state.preferences.bool("haptics", true))
-                view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
             action()
         }) {
             val tint = Color.White.copy(alpha = if (enabled) 1f else .38f)
@@ -470,7 +520,7 @@ internal fun GalleryControl(
     val perform = {
         if (enabled) {
             if (state.preferences.bool("haptics", true))
-                view.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+                view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP)
             action()
         }
     }

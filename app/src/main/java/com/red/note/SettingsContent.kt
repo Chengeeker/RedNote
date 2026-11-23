@@ -603,7 +603,7 @@ private fun AboutDialog(state: RedState, close: () -> Unit) {
                 )
                 Spacer(Modifier.height(30.dp))
                 listOf(
-                        "palette_outlined" to "Material You 动态配色与个性化字体",
+                        "palette_outlined" to "液态玻璃效果、主题配色与个性化字体",
                         "photo_library_outlined" to "笔记浏览、高清图库与视频播放",
                         "lock_outline_rounded" to "官方网页登录，不接收密码；登录过期或验证码请在网页处理，网页与接口变化可能影响功能。",
                     )
