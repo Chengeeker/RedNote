@@ -210,12 +210,16 @@ internal fun RedApp(state: RedState, activity: MainActivity) {
         BackHandler(stack.isEmpty() && tab == 3) { back() }
         PredictiveBackHandler(stack.isNotEmpty()) { progress ->
             val previous = Screen(stack.getOrNull(stack.lastIndex - 1), stack.size - 1)
+            val mediaRoute = { screen: Screen ->
+                ((screen.route as? Route.Content)?.page).let { it is Page.Detail || it is Page.Gallery }
+            }
+            val deferMediaPreview = mediaRoute(currentScreen) || mediaRoute(previous)
             val reversal = activeRedirect?.takeIf { it.gallery == currentScreen }?.reversal
             val start = reversal?.progress?.value
             seeking = true
             try {
                 progress.collect {
-                    if (reversal != null && start != null)
+                    if (!deferMediaPreview && reversal != null && start != null)
                         reversal.progress.snapTo(
                             androidx.compose.ui.util.lerp(
                                 start,
@@ -223,7 +227,7 @@ internal fun RedApp(state: RedState, activity: MainActivity) {
                                 it.progress,
                             )
                         )
-                    pageState.seekTo(it.progress, previous)
+                    if (!deferMediaPreview) pageState.seekTo(it.progress, previous)
                 }
                 back()
             } catch (e: CancellationException) {
