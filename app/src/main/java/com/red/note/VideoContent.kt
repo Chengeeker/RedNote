@@ -4,8 +4,12 @@ package com.red.note
 
 import android.content.pm.ActivityInfo
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.view.GestureDetector
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.*
@@ -95,6 +99,7 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
     val activity = LocalContext.current as MainActivity
     val owner = LocalLifecycleOwner.current
     val window = activity.window
+    val hapticsEnabled = LocalHapticsEnabled.current
     val insets = remember { WindowCompat.getInsetsController(window, window.decorView) }
     val sourceList =
         remember(note) { videoStreams(note.raw.optJSONObject("video") ?: org.json.JSONObject()) }
@@ -123,6 +128,8 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
     var brightness by remember { mutableFloatStateOf(.5f) }
     var volume by remember { mutableFloatStateOf(.7f) }
     var hud by remember { mutableStateOf("") }
+    var speedCue by remember { mutableStateOf("") }
+    var lockCue by remember { mutableStateOf("") }
     var speedPicker by remember { mutableStateOf(false) }
     var qualityPicker by remember { mutableStateOf(false) }
     val player = remember {
@@ -296,6 +303,8 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
             hud = ""
         }
     }
+    LaunchedEffect(speedCue) { if (speedCue.isNotEmpty()) { delay(900); speedCue = "" } }
+    LaunchedEffect(lockCue) { if (lockCue.isNotEmpty()) { delay(900); lockCue = "" } }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             factory = { context ->
@@ -304,16 +313,49 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                     useController = false
                     var fast = false
                     var left = false
+                    var boostLocked = false
+                    var lockOnRelease = false
+                    var unlockOnRelease = false
+                    var holdY = 0f
+                    var holdX = 0f
+                    var holdDownTime = 0L
+                    var seekStart = 0L
+                    var holdPending = false
+                    val holdHandler = Handler(Looper.getMainLooper())
+                    val beginFast = Runnable {
+                        if (holdPending) {
+                            holdPending = false
+                            fast = true
+                            lockOnRelease = false
+                            unlockOnRelease = false
+                            player.setPlaybackSpeed(2f)
+                            speedCue = if (boostLocked) "2.0X 倍速已锁定" else "2.0X 快进中"
+                            lockCue = ""
+                            hud = ""
+                        }
+                    }
                     val detector =
                         GestureDetector(
                             context,
                             object : GestureDetector.SimpleOnGestureListener() {
                                 override fun onDown(e: MotionEvent): Boolean {
                                     left = e.x < width / 2
+                                    holdY = e.y
+                                    holdX = e.x
+                                    holdDownTime = e.downTime
+                                    holdPending = true
+                                    holdHandler.removeCallbacks(beginFast)
+                                    holdHandler.postDelayed(beginFast, ViewConfiguration.getLongPressTimeout().toLong())
+                                    seekStart = player.currentPosition
                                     return true
                                 }
 
-                                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                                override fun onSingleTapUp(e: MotionEvent): Boolean {
+                                    if (fast) return true
+                                    if (hapticsEnabled)
+                                        activity.window.decorView.performHapticFeedback(
+                                            HapticFeedbackConstants.KEYBOARD_TAP
+                                        )
                                     controls = !controls
                                     touch()
                                     return true
@@ -343,18 +385,52 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                                     return true
                                 }
 
-                                override fun onLongPress(e: MotionEvent) {
-                                    fast = true
-                                    player.setPlaybackSpeed(2f)
-                                    hud = "2.0X 快进中"
-                                }
-
                                 override fun onScroll(
                                     start: MotionEvent?,
                                     end: MotionEvent,
                                     dx: Float,
                                     dy: Float,
                                 ): Boolean {
+                                    val distance = end.y - holdY
+                                    val threshold = 48f * resources.displayMetrics.density
+                                    if (fast) {
+                                        lockOnRelease = !boostLocked && distance >= threshold
+                                        unlockOnRelease = boostLocked && distance <= -threshold
+                                        lockCue = when {
+                                            lockOnRelease -> "松开锁定倍速"
+                                            unlockOnRelease -> "松开恢复原速"
+                                            else -> ""
+                                        }
+                                        return true
+                                    }
+                                    if (holdPending) {
+                                        if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                                            holdPending = false
+                                            holdHandler.removeCallbacks(beginFast)
+                                        } else if (end.eventTime - holdDownTime >= ViewConfiguration.getLongPressTimeout().toLong()) {
+                                            beginFast.run()
+                                            lockOnRelease = !boostLocked && distance >= threshold
+                                            unlockOnRelease = boostLocked && distance <= -threshold
+                                            lockCue = when {
+                                                lockOnRelease -> "松开锁定倍速"
+                                                unlockOnRelease -> "松开恢复原速"
+                                                else -> ""
+                                            }
+                                            return true
+                                        } else if (kotlin.math.abs(distance) < threshold) return true
+                                        else {
+                                            holdPending = false
+                                            holdHandler.removeCallbacks(beginFast)
+                                        }
+                                    }
+                                    if (kotlin.math.abs(dx) > kotlin.math.abs(dy)) {
+                                        val target = (seekStart - (end.x - holdX) / width.coerceAtLeast(1) * 60000)
+                                            .toLong().coerceIn(0L, player.duration.coerceAtLeast(0L))
+                                        player.seekTo(target)
+                                        position = target
+                                        hud = "定位 ${durationText(target)}"
+                                        return true
+                                    }
                                     if (kotlin.math.abs(dy) < kotlin.math.abs(dx)) return false
                                     val delta = dy / resources.displayMetrics.density / 200f
                                     if (left) {
@@ -372,17 +448,35 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                                     return true
                                 }
                             },
-                        )
+                        ).apply { setIsLongpressEnabled(false) }
+                    addOnAttachStateChangeListener(object : android.view.View.OnAttachStateChangeListener {
+                        override fun onViewAttachedToWindow(view: android.view.View) = Unit
+                        override fun onViewDetachedFromWindow(view: android.view.View) {
+                            holdPending = false
+                            holdHandler.removeCallbacks(beginFast)
+                        }
+                    })
                     setOnTouchListener { _, event ->
                         detector.onTouchEvent(event)
+                        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                            holdPending = false
+                            holdHandler.removeCallbacks(beginFast)
+                        }
                         if (
                             event.actionMasked == MotionEvent.ACTION_UP ||
                                 event.actionMasked == MotionEvent.ACTION_CANCEL
                         ) {
                             if (fast) {
                                 fast = false
-                                player.setPlaybackSpeed(speed)
-                                hud = ""
+                                if (lockOnRelease) boostLocked = true
+                                if (unlockOnRelease) boostLocked = false
+                                player.setPlaybackSpeed(if (boostLocked) 2f else speed)
+                                speedCue = ""
+                                lockCue = when {
+                                    lockOnRelease -> "2.0X 倍速已锁定"
+                                    unlockOnRelease -> "已恢复原速"
+                                    else -> ""
+                                }
                             }
                         }
                         true
@@ -416,10 +510,10 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                 Modifier.align(Alignment.Center),
                 color = Color.White.copy(alpha = .7f),
             )
-        if (hud.isNotEmpty())
+        VideoHintOverlay(player, hud.isNotEmpty(), speed = hud.startsWith("2.0X") || hud.startsWith("松开"), contentKey = hud) {
             Surface(
-                Modifier.align(Alignment.Center),
-                color = Color.Black.copy(alpha = .54f),
+                Modifier,
+                color = Color.Black.copy(alpha = .87f),
                 shape = RoundedCornerShape(10.dp),
             ) {
                 val level = hud.startsWith("亮度") || hud.startsWith("音量")
@@ -431,6 +525,8 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                         if (hud.startsWith("亮度")) "brightness_6_rounded"
                         else if (hud.startsWith("音量"))
                             if (volume > 0) "volume_up_rounded" else "volume_off_rounded"
+                        else if (hud.startsWith("松开")) "speed_rounded"
+                        else if (hud.startsWith("定位")) "forward_10_rounded"
                         else if (hud.startsWith("-")) "fast_rewind_rounded"
                         else "fast_forward_rounded",
                         null,
@@ -453,23 +549,18 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                         )
                 }
             }
-        androidx.compose.animation.AnimatedVisibility(
-            controls,
-            enter =
-                androidx.compose.animation.fadeIn(
-                    androidx.compose.animation.core.tween(
-                        220,
-                        easing = androidx.compose.animation.core.LinearEasing,
-                    )
-                ),
-            exit =
-                androidx.compose.animation.fadeOut(
-                    androidx.compose.animation.core.tween(
-                        220,
-                        easing = androidx.compose.animation.core.LinearEasing,
-                    )
-                ),
-        ) {
+        }
+        val holdHint = lockCue.ifEmpty { speedCue }
+        VideoHintOverlay(player, holdHint.isNotEmpty(), speed = true, contentKey = holdHint) {
+            Surface(Modifier, color = Color.Black.copy(alpha = .87f), shape = RoundedCornerShape(10.dp)) {
+                Row(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Glyph("speed_rounded", null, 24.dp, Color.White)
+                    Spacer(Modifier.width(8.dp))
+                    Text(holdHint, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+        if (controls) {
             Box(Modifier.fillMaxSize()) {
                 ReviewVideoTop(Modifier.align(Alignment.TopCenter), note.title, note.author, landscape,
                     close = { if (landscape) rotate() else back() }) {
@@ -482,7 +573,14 @@ internal fun VideoContent(state: RedState, note: Note, back: () -> Unit) {
                 ReviewVideoBottom(Modifier.align(Alignment.BottomCenter), position, duration, player.bufferedPosition.coerceAtLeast(0),
                     playing, speed, landscape, enabled = ready, quality = qualityOptions[quality]?.substringBefore("（"),
                     onPlay = ::pausePlay, onSpeed = { speedPicker = true; touch() }, onQuality = { qualityPicker = true; touch() },
-                    onFullscreen = ::rotate, onSeek = { player.seekTo(it); position = it; touch() })
+                    onFullscreen = ::rotate,
+                    onSeekStart = {
+                        if (hapticsEnabled)
+                            activity.window.decorView.performHapticFeedback(
+                                HapticFeedbackConstants.KEYBOARD_TAP
+                            )
+                    },
+                    onSeek = { player.seekTo(it); position = it; touch() })
             }
         }
     }
